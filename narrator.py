@@ -111,7 +111,7 @@ def _build_prompt(analysis: ParlayAnalysis) -> str:
         for idx, s in kelly_sels:
             kelly_block += f"\n- Sel {idx}: apostar el {s.kelly_fraccion:.1%} del bankroll"
 
-    razones_str = "\n- ".join(analysis.razones_confianza)
+    razones_str = "\n- ".join(analysis.razones_confianza) if analysis.razones_confianza else "Sin razones registradas"
 
     cuota_line = f"\nCuota total declarada: {analysis.cuota_total}" if analysis.cuota_total else ""
 
@@ -155,15 +155,18 @@ def generate_narrative(analysis: ParlayAnalysis) -> str | None:
     prompt = _build_prompt(analysis)
 
     client = genai.Client(api_key=key)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=800,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        ),
-    )
-
-    text = response.text.strip() if response.text else ""
-    return text if text else None
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=800,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        text = response.text.strip() if response.text else ""
+        return text if text else None
+    except Exception as e:
+        log.warning("Gemini error generating narrative: %s", e)
+        return None
