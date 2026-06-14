@@ -85,3 +85,32 @@ def test_status_final_pen_especial():
 
 def test_status_desconocido_pendiente():
     assert _mapear_status("STATUS_LO_QUE_SEA") == "PENDIENTE"
+
+
+# ── Tests para _resultado_parlay ──────────────────────────────────────────────
+
+from resolver import _resultado_parlay
+
+
+def test_parlay_todas_ganadas():
+    assert _resultado_parlay(["GANADA", "GANADA"]) == "GANADO"
+
+def test_parlay_una_perdida():
+    assert _resultado_parlay(["GANADA", "PERDIDA"]) == "PERDIDO"
+
+def test_parlay_perdida_tiene_precedencia_sobre_pendiente():
+    # un leg perdido mata el parlay aunque haya pendientes
+    assert _resultado_parlay(["PERDIDA", "PENDIENTE"]) == "PERDIDO"
+
+def test_parlay_pendiente_sin_perdidas():
+    assert _resultado_parlay(["GANADA", "PENDIENTE"]) == "PENDIENTE"
+
+def test_parlay_pendiente_precede_a_especial():
+    assert _resultado_parlay(["PENDIENTE", "ESPECIAL"]) == "PENDIENTE"
+
+def test_parlay_especial_sin_perdidas_ni_pendientes():
+    assert _resultado_parlay(["GANADA", "ESPECIAL"]) == "ANULADO"
+
+def test_parlay_vacio_es_pendiente():
+    # parlay con solo exóticas (todas excluidas) -> no concluir
+    assert _resultado_parlay([]) == "PENDIENTE"

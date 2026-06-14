@@ -69,3 +69,22 @@ def _mapear_status(status_name):
     if status_name in _STATUS_ESPECIAL:
         return "ESPECIAL"
     return "PENDIENTE"
+
+
+# ── Resultado del parlay (por precedencia) ────────────────────────────────────
+
+def _resultado_parlay(estados):
+    """
+    estados: lista de estado por selección NO exótica, cada uno en
+    {GANADA, PERDIDA, PENDIENTE, ESPECIAL}.
+    Precedencia: PERDIDA > PENDIENTE > ESPECIAL > GANADA.
+    """
+    if not estados:
+        return "PENDIENTE"
+    if "PERDIDA" in estados:
+        return "PERDIDO"
+    if "PENDIENTE" in estados:
+        return "PENDIENTE"
+    if "ESPECIAL" in estados:
+        return "ANULADO"
+    return "GANADO"
