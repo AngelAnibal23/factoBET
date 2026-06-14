@@ -128,11 +128,12 @@ def _parse_eventos(espn_json):
 # ── Matching de selección a evento ────────────────────────────────────────────
 
 def _fuzzy(a, b):
+    # token_set_ratio: matchea subsets legítimos (FBC Melgar -> Melgar = 1.00) pero
+    # rechaza clubes distintos con prefijo compartido (Alianza Lima vs Alianza
+    # Atlético = 0.74). partial_ratio daría 0.86 aquí — falso positivo. No usar partial
+    # en el resolver: aquí matcheamos nombres canónicos limpios, no OCR crudo.
     a_norm, b_norm = a.strip().lower(), b.strip().lower()
-    return max(
-        fuzz.partial_ratio(a_norm, b_norm),
-        fuzz.token_sort_ratio(a_norm, b_norm),
-    ) / 100.0
+    return fuzz.token_set_ratio(a_norm, b_norm) / 100.0
 
 
 def _match_evento(nombre_local, nombre_visitante, eventos, umbral=MATCH_UMBRAL):

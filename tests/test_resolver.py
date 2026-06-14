@@ -213,3 +213,13 @@ def test_match_evento_no_acepta_orientacion_invertida():
     # (preserva semántica home/away para el cálculo de acierto)
     ev = _match_evento("Alianza Lima", "FC Cajamarca", _EVENTOS)
     assert ev is None
+
+
+def test_match_evento_no_confunde_clubes_con_prefijo_compartido():
+    # BUG real detectado en e2e: "Alianza Lima" hacía falso match con "Alianza Atlético"
+    # (club distinto) por el prefijo compartido. token_set_ratio debe rechazarlo.
+    eventos = [
+        {"local": "Alianza Atletico", "visitante": "Sport Huancayo",
+         "goles_local": 4, "goles_visitante": 1, "status_name": "STATUS_FULL_TIME", "fecha": ""},
+    ]
+    assert _match_evento("Alianza Lima", "Sport Huancayo", eventos) is None
