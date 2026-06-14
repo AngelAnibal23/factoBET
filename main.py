@@ -31,6 +31,7 @@ from ocr import extract_parlay, OcrExtractionError, OcrParseError
 from validator import validate, _load_teams, ValidationError, SyntacticError, SemanticError, RangeError
 from analyzer import analyze, warm_up, ParlayAnalysis
 from storage import save_analysis
+from narrator import generate_narrative
 
 # ── Startup: warm up model cache and team list ────────────────────────────────
 
@@ -101,7 +102,7 @@ def _err(code: str, message: str, detail: str = "", duracion_ms: int = 0) -> dic
 
 # ── Serializers ───────────────────────────────────────────────────────────────
 
-def _serialize_analysis(result: ParlayAnalysis, needs_confirmation: list[str]) -> dict:
+def _serialize_analysis(result: ParlayAnalysis, needs_confirmation: list[str], narrativa: str | None = None) -> dict:
     selecciones = []
     for s in result.selecciones:
         selecciones.append({
@@ -153,7 +154,7 @@ def _serialize_analysis(result: ParlayAnalysis, needs_confirmation: list[str]) -
         "selecciones":         selecciones,
         "correlaciones":       correlaciones,
         "confirmacion_requerida": needs_confirmation,
-        "narrativa":           None,   # Phase 3 — Groq/Llama
+        "narrativa":           narrativa,
         "disclaimer": (
             "Este analisis es estadistico, no predictivo. El futbol tiene alta varianza "
             "irreducible. El valor estadistico solo se realiza en el largo plazo con "
@@ -253,8 +254,15 @@ async def analizar_parlay(
     except Exception as e:
         log.error("Storage error — analysis returned but not saved: %s", e)
 
+    # 6. Generate narrative (non-blocking: failure keeps narrativa=None)
+    narrativa = None
+    try:
+        narrativa = generate_narrative(result)
+    except Exception as e:
+        log.error("Narrative generation failed: %s", e)
+
     ms   = int((time.monotonic() - t0) * 1000)
-    data = _serialize_analysis(result, parlay.needs_confirmation)
+    data = _serialize_analysis(result, parlay.needs_confirmation, narrativa)
     data["image_hash"] = image_hash
     data["parlay_id"]  = parlay_id
 
@@ -274,7 +282,7 @@ async def modelo_estado():
         "brier_score_actual": 0.2797,
         "target_brier":       0.25,
         "estado":             "operativo",
-        "fase":               "Phase 1 MVP — sin narrativa LLM",
+        "fase":               "Phase 3 — narrativa LLM activa (Gemini 2.5 Flash)",
     }, ms))
 
 
