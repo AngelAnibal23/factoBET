@@ -51,3 +51,21 @@ def _calcular_acierto(mercado, seleccion, linea, gl, gv):
         if seleccion == "away": return gv - linea > gl
 
     return None
+
+
+# ── Mapeo de estado ESPN ──────────────────────────────────────────────────────
+
+_STATUS_FINALIZADO = {"STATUS_FULL_TIME", "STATUS_FINAL"}
+_STATUS_ESPECIAL = {
+    "STATUS_FINAL_PEN", "STATUS_POSTPONED", "STATUS_CANCELED",
+    "STATUS_CANCELLED", "STATUS_ABANDONED", "STATUS_SUSPENDED",
+}
+
+
+def _mapear_status(status_name):
+    """FINALIZADO (resoluble) | PENDIENTE (no jugado/en curso) | ESPECIAL (anulado/penales)."""
+    if status_name in _STATUS_FINALIZADO:
+        return "FINALIZADO"
+    if status_name in _STATUS_ESPECIAL:
+        return "ESPECIAL"
+    return "PENDIENTE"

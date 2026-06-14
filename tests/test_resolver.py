@@ -54,3 +54,34 @@ def test_marcador_none_devuelve_none():
 
 def test_exotic_devuelve_none():
     assert _calcular_acierto("exotic", "lo que sea", None, 2, 1) is None
+
+
+# ── Tests para _mapear_status ─────────────────────────────────────────────────
+
+from resolver import _mapear_status
+
+
+def test_status_full_time_finalizado():
+    assert _mapear_status("STATUS_FULL_TIME") == "FINALIZADO"
+
+def test_status_final_finalizado():
+    assert _mapear_status("STATUS_FINAL") == "FINALIZADO"
+
+def test_status_scheduled_pendiente():
+    assert _mapear_status("STATUS_SCHEDULED") == "PENDIENTE"
+
+def test_status_first_half_pendiente():
+    assert _mapear_status("STATUS_FIRST_HALF") == "PENDIENTE"
+
+def test_status_postponed_especial():
+    assert _mapear_status("STATUS_POSTPONED") == "ESPECIAL"
+
+def test_status_canceled_especial():
+    assert _mapear_status("STATUS_CANCELED") == "ESPECIAL"
+
+def test_status_final_pen_especial():
+    # penales -> revisión manual, no liquidar automático
+    assert _mapear_status("STATUS_FINAL_PEN") == "ESPECIAL"
+
+def test_status_desconocido_pendiente():
+    assert _mapear_status("STATUS_LO_QUE_SEA") == "PENDIENTE"
