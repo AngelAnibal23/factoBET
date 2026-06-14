@@ -88,3 +88,34 @@ def _resultado_parlay(estados):
     if "ESPECIAL" in estados:
         return "ANULADO"
     return "GANADO"
+
+
+# ── Parseo de la respuesta ESPN ───────────────────────────────────────────────
+
+def _score_int(competitor):
+    s = competitor.get("score")
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_eventos(espn_json):
+    """Convierte el JSON del scoreboard ESPN en una lista de eventos normalizados."""
+    eventos = []
+    for e in espn_json.get("events", []):
+        comp = (e.get("competitions") or [{}])[0]
+        competitors = comp.get("competitors", [])
+        home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+        away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+        if not home or not away:
+            continue
+        eventos.append({
+            "local":            home["team"]["displayName"],
+            "visitante":        away["team"]["displayName"],
+            "goles_local":      _score_int(home),
+            "goles_visitante":  _score_int(away),
+            "status_name":      e.get("status", {}).get("type", {}).get("name", ""),
+            "fecha":            e.get("date", ""),
+        })
+    return eventos

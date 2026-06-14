@@ -114,3 +114,62 @@ def test_parlay_especial_sin_perdidas_ni_pendientes():
 def test_parlay_vacio_es_pendiente():
     # parlay con solo exóticas (todas excluidas) -> no concluir
     assert _resultado_parlay([]) == "PENDIENTE"
+
+
+# ── Tests para _parse_eventos ────────────────────────────────────────────────
+
+from resolver import _parse_eventos
+
+
+_ESPN_SAMPLE = {
+    "events": [
+        {
+            "date": "2026-05-31T18:15Z",
+            "status": {"type": {"name": "STATUS_FULL_TIME", "completed": True}},
+            "competitions": [{
+                "competitors": [
+                    {"homeAway": "home", "score": "1",
+                     "team": {"displayName": "FC Cajamarca", "abbreviation": "CAJ"}},
+                    {"homeAway": "away", "score": "2",
+                     "team": {"displayName": "Alianza Lima", "abbreviation": "ALI"}},
+                ]
+            }],
+        },
+        {
+            "date": "2026-06-01T20:00Z",
+            "status": {"type": {"name": "STATUS_SCHEDULED", "completed": False}},
+            "competitions": [{
+                "competitors": [
+                    {"homeAway": "home", "score": None,
+                     "team": {"displayName": "Melgar", "abbreviation": "MEL"}},
+                    {"homeAway": "away", "score": None,
+                     "team": {"displayName": "Sporting Cristal", "abbreviation": "CRI"}},
+                ]
+            }],
+        },
+    ]
+}
+
+
+def test_parse_eventos_cantidad():
+    evs = _parse_eventos(_ESPN_SAMPLE)
+    assert len(evs) == 2
+
+def test_parse_eventos_marcador_y_nombres():
+    ev = _parse_eventos(_ESPN_SAMPLE)[0]
+    assert ev["local"] == "FC Cajamarca"
+    assert ev["visitante"] == "Alianza Lima"
+    assert ev["goles_local"] == 1
+    assert ev["goles_visitante"] == 2
+    assert ev["status_name"] == "STATUS_FULL_TIME"
+
+def test_parse_eventos_score_none_cuando_no_jugado():
+    ev = _parse_eventos(_ESPN_SAMPLE)[1]
+    assert ev["goles_local"] is None
+    assert ev["goles_visitante"] is None
+
+def test_parse_eventos_vacio():
+    assert _parse_eventos({"events": []}) == []
+
+def test_parse_eventos_sin_events_key():
+    assert _parse_eventos({}) == []
