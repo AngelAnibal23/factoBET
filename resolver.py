@@ -145,3 +145,184 @@ def _match_evento(nombre_local, nombre_visitante, eventos, umbral=MATCH_UMBRAL):
             best_score = sl + sv
             best = ev
     return best
+
+
+# ── Cliente Supabase (lazy, igual que storage.py) ─────────────────────────────
+
+_sb = None
+
+
+def _client():
+    global _sb
+    if _sb is None:
+        _sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    return _sb
+
+
+# ── Fetch ESPN ────────────────────────────────────────────────────────────────
+
+def _fetch_eventos(league, fecha_inicio, fecha_fin):
+    """
+    league: slug ESPN (ej. 'per.1'). fecha_inicio/fecha_fin: 'YYYYMMDD'.
+    Una sola request cubre todo el rango. Lanza requests.HTTPError si falla.
+    """
+    url = f"{ESPN_BASE}/{league}/scoreboard"
+    params = {"dates": f"{fecha_inicio}-{fecha_fin}", "limit": 1000}
+    resp = requests.get(
+        url, params=params, timeout=25,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+    )
+    resp.raise_for_status()
+    return _parse_eventos(resp.json())
+
+
+# ── Actualización de parlay completo ──────────────────────────────────────────
+
+def _actualizar_parlay(sb, parlay_id, ahora_iso, dry_run):
+    """Recalcula resultado_parlay con las selecciones no exóticas. Retorna True si lo escribió."""
+    sels = (
+        sb.table("selecciones_parlay")
+        .select("acierto, resultado_real, es_mercado_exotico")
+        .eq("parlay_id", parlay_id)
+        .execute().data
+    )
+    estados = []
+    for s in sels:
+        if s["es_mercado_exotico"]:
+            continue
+        if s["acierto"] is True:
+            estados.append("GANADA")
+        elif s["acierto"] is False:
+            estados.append("PERDIDA")
+        elif s["resultado_real"]:        # acierto NULL pero con resultado escrito → especial
+            estados.append("ESPECIAL")
+        else:
+            estados.append("PENDIENTE")
+
+    resultado = _resultado_parlay(estados)
+    if resultado == "PENDIENTE":
+        return False
+    if not dry_run:
+        (sb.table("analisis_parlays")
+         .update({"resultado_parlay": resultado, "resolved_at": ahora_iso})
+         .eq("id", parlay_id).execute())
+    return True
+
+
+# ── Orquestador público ───────────────────────────────────────────────────────
+
+def resolver_resultados(league="per.1", dry_run=False):
+    """
+    Resuelve todas las selecciones pendientes (acierto IS NULL, no exóticas).
+    Retorna resumen {resueltas, pendientes, sin_match, especiales, errores,
+    parlays_completados, detalle}.
+    """
+    sb = _client()
+    resumen = {
+        "resueltas": 0, "pendientes": 0, "sin_match": 0, "especiales": 0,
+        "errores": 0, "parlays_completados": 0, "detalle": [],
+    }
+
+    pend = (
+        sb.table("selecciones_parlay")
+        .select("id, parlay_id, mercado, seleccion, linea, features_snapshot, "
+                "es_mercado_exotico, analisis_parlays(created_at)")
+        .is_("acierto", "null")
+        .eq("es_mercado_exotico", False)
+        .execute().data
+    )
+    if not pend:
+        return resumen
+
+    # Ventana temporal: desde el parlay más antiguo pendiente hasta hoy
+    fechas = [
+        p["analisis_parlays"]["created_at"]
+        for p in pend if p.get("analisis_parlays")
+    ]
+    ahora = datetime.now(tz=timezone.utc)
+    if fechas:
+        inicio_dt = min(
+            datetime.fromisoformat(f.replace("Z", "+00:00")) for f in fechas
+        )
+    else:
+        inicio_dt = ahora
+    inicio = inicio_dt.strftime("%Y%m%d")
+    fin = ahora.strftime("%Y%m%d")
+    ahora_iso = ahora.isoformat()
+
+    eventos = _fetch_eventos(league, inicio, fin)
+
+    equipos = {
+        e["id"]: e
+        for e in sb.table("equipos").select("id, nombre_oficial, aliases").execute().data
+    }
+
+    parlays_afectados = set()
+
+    for sel in pend:
+        try:
+            fs = sel.get("features_snapshot") or {}
+            eq_local = equipos.get(fs.get("equipo_local_id"))
+            eq_vis = equipos.get(fs.get("equipo_visitante_id"))
+            if not eq_local or not eq_vis:
+                resumen["sin_match"] += 1
+                continue
+
+            ev = _match_evento(eq_local["nombre_oficial"], eq_vis["nombre_oficial"], eventos)
+            if not ev:
+                resumen["sin_match"] += 1
+                continue
+
+            estado = _mapear_status(ev["status_name"])
+
+            if estado == "PENDIENTE":
+                resumen["pendientes"] += 1
+                continue
+
+            if estado == "ESPECIAL":
+                resumen["especiales"] += 1
+                if not dry_run:
+                    (sb.table("selecciones_parlay")
+                     .update({"resultado_real": ev["status_name"], "resolved_at": ahora_iso})
+                     .eq("id", sel["id"]).execute())
+                parlays_afectados.add(sel["parlay_id"])
+                resumen["detalle"].append({
+                    "seleccion_id": sel["id"],
+                    "match": f"{ev['local']} vs {ev['visitante']}",
+                    "resultado_real": ev["status_name"],
+                    "acierto": None,
+                })
+                continue
+
+            # FINALIZADO
+            acierto = _calcular_acierto(
+                sel["mercado"], sel["seleccion"], sel["linea"],
+                ev["goles_local"], ev["goles_visitante"],
+            )
+            marcador = f"{ev['goles_local']}-{ev['goles_visitante']}"
+            if not dry_run:
+                (sb.table("selecciones_parlay")
+                 .update({"resultado_real": marcador, "acierto": acierto, "resolved_at": ahora_iso})
+                 .eq("id", sel["id"]).execute())
+            resumen["resueltas"] += 1
+            parlays_afectados.add(sel["parlay_id"])
+            resumen["detalle"].append({
+                "seleccion_id": sel["id"],
+                "match": f"{ev['local']} vs {ev['visitante']}",
+                "resultado_real": marcador,
+                "acierto": acierto,
+            })
+
+        except Exception as e:
+            resumen["errores"] += 1
+            log.error("Error resolviendo seleccion %s: %s", sel.get("id"), e)
+
+    for pid in parlays_afectados:
+        try:
+            if _actualizar_parlay(sb, pid, ahora_iso, dry_run):
+                resumen["parlays_completados"] += 1
+        except Exception as e:
+            resumen["errores"] += 1
+            log.error("Error actualizando parlay %s: %s", pid, e)
+
+    return resumen
