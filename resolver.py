@@ -110,9 +110,13 @@ def _parse_eventos(espn_json):
         away = next((c for c in competitors if c.get("homeAway") == "away"), None)
         if not home or not away:
             continue
+        home_name = home.get("team", {}).get("displayName", "")
+        away_name = away.get("team", {}).get("displayName", "")
+        if not home_name or not away_name:
+            continue
         eventos.append({
-            "local":            home["team"]["displayName"],
-            "visitante":        away["team"]["displayName"],
+            "local":            home_name,
+            "visitante":        away_name,
             "goles_local":      _score_int(home),
             "goles_visitante":  _score_int(away),
             "status_name":      e.get("status", {}).get("type", {}).get("name", ""),
@@ -216,6 +220,11 @@ def resolver_resultados(league="per.1", dry_run=False):
     Resuelve todas las selecciones pendientes (acierto IS NULL, no exóticas).
     Retorna resumen {resueltas, pendientes, sin_match, especiales, errores,
     parlays_completados, detalle}.
+
+    Nota: en dry_run=True las selecciones no se escriben, por lo que
+    _actualizar_parlay re-lee el estado original de la DB y parlays_completados
+    será 0. El dry_run sirve para previsualizar `detalle` y los conteos por
+    selección, no el cierre de parlays.
     """
     sb = _client()
     resumen = {
@@ -235,10 +244,13 @@ def resolver_resultados(league="per.1", dry_run=False):
         return resumen
 
     # Ventana temporal: desde el parlay más antiguo pendiente hasta hoy
-    fechas = [
-        p["analisis_parlays"]["created_at"]
-        for p in pend if p.get("analisis_parlays")
-    ]
+    fechas = []
+    for p in pend:
+        ap = p.get("analisis_parlays")
+        if isinstance(ap, list):
+            ap = ap[0] if ap else None
+        if ap and ap.get("created_at"):
+            fechas.append(ap["created_at"])
     ahora = datetime.now(tz=timezone.utc)
     if fechas:
         inicio_dt = min(
@@ -300,6 +312,16 @@ def resolver_resultados(league="per.1", dry_run=False):
                 ev["goles_local"], ev["goles_visitante"],
             )
             marcador = f"{ev['goles_local']}-{ev['goles_visitante']}"
+            if acierto is None:
+                # Partido finalizado pero no resoluble (linea/goles faltantes).
+                # Fail loudly: registrar y contar como error, no liquidar la selección.
+                resumen["errores"] += 1
+                log.error(
+                    "Seleccion %s FINALIZADA pero acierto no calculable "
+                    "(mercado=%s, seleccion=%s, linea=%s, marcador=%s)",
+                    sel.get("id"), sel["mercado"], sel["seleccion"], sel["linea"], marcador,
+                )
+                continue
             if not dry_run:
                 (sb.table("selecciones_parlay")
                  .update({"resultado_real": marcador, "acierto": acierto, "resolved_at": ahora_iso})
