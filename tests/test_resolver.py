@@ -173,3 +173,43 @@ def test_parse_eventos_vacio():
 
 def test_parse_eventos_sin_events_key():
     assert _parse_eventos({}) == []
+
+
+# ── Tests para _match_evento ────────────────────────────────────────────────
+
+from resolver import _match_evento
+
+
+_EVENTOS = [
+    {"local": "FC Cajamarca", "visitante": "Alianza Lima",
+     "goles_local": 1, "goles_visitante": 2, "status_name": "STATUS_FULL_TIME", "fecha": ""},
+    {"local": "Melgar", "visitante": "Sporting Cristal",
+     "goles_local": 0, "goles_visitante": 0, "status_name": "STATUS_FULL_TIME", "fecha": ""},
+]
+
+
+def test_match_evento_exacto():
+    ev = _match_evento("FC Cajamarca", "Alianza Lima", _EVENTOS)
+    assert ev is not None
+    assert ev["local"] == "FC Cajamarca"
+
+def test_match_evento_nombre_canonico_diferente():
+    # equipos.nombre_oficial "FBC Melgar" vs ESPN "Melgar" -> fuzzy debe matchear
+    ev = _match_evento("FBC Melgar", "Sporting Cristal", _EVENTOS)
+    assert ev is not None
+    assert ev["local"] == "Melgar"
+
+def test_match_evento_sin_coincidencia():
+    ev = _match_evento("Universitario", "ADT", _EVENTOS)
+    assert ev is None
+
+def test_match_evento_local_ok_visitante_no():
+    # solo coincide el local -> no es match (exige ambos)
+    ev = _match_evento("FC Cajamarca", "Equipo Inexistente", _EVENTOS)
+    assert ev is None
+
+def test_match_evento_no_acepta_orientacion_invertida():
+    # parlay con local/visitante invertidos respecto a ESPN -> no match
+    # (preserva semántica home/away para el cálculo de acierto)
+    ev = _match_evento("Alianza Lima", "FC Cajamarca", _EVENTOS)
+    assert ev is None

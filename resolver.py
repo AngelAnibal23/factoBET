@@ -119,3 +119,29 @@ def _parse_eventos(espn_json):
             "fecha":            e.get("date", ""),
         })
     return eventos
+
+
+# ── Matching de selección a evento ────────────────────────────────────────────
+
+def _fuzzy(a, b):
+    a_norm, b_norm = a.strip().lower(), b.strip().lower()
+    return max(
+        fuzz.partial_ratio(a_norm, b_norm),
+        fuzz.token_sort_ratio(a_norm, b_norm),
+    ) / 100.0
+
+
+def _match_evento(nombre_local, nombre_visitante, eventos, umbral=MATCH_UMBRAL):
+    """
+    Devuelve el evento cuyo local Y visitante coinciden (>= umbral) con los nombres
+    dados, respetando la orientación home/away. None si ninguno cumple.
+    """
+    best = None
+    best_score = 0.0
+    for ev in eventos:
+        sl = _fuzzy(nombre_local, ev["local"])
+        sv = _fuzzy(nombre_visitante, ev["visitante"])
+        if sl >= umbral and sv >= umbral and (sl + sv) > best_score:
+            best_score = sl + sv
+            best = ev
+    return best
