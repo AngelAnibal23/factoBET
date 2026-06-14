@@ -32,6 +32,7 @@ from validator import validate, _load_teams, ValidationError, SyntacticError, Se
 from analyzer import analyze, warm_up, ParlayAnalysis
 from storage import save_analysis
 from narrator import generate_narrative
+from resolver import resolver_resultados
 
 # ── Startup: warm up model cache and team list ────────────────────────────────
 
@@ -284,6 +285,23 @@ async def modelo_estado():
         "estado":             "operativo",
         "fase":               "Phase 3 — narrativa LLM activa (Gemini 2.5 Flash)",
     }, ms))
+
+
+@app.post("/api/v1/admin/resolver-resultados")
+async def resolver_resultados_endpoint(league: str = "per.1", dry_run: bool = False):
+    t0 = time.monotonic()
+    try:
+        resumen = resolver_resultados(league=league, dry_run=dry_run)
+    except Exception as e:
+        ms = int((time.monotonic() - t0) * 1000)
+        return JSONResponse(
+            status_code=502,
+            content=_err("RESOLVER_ERROR",
+                         "Error resolviendo resultados desde ESPN.",
+                         str(e), ms),
+        )
+    ms = int((time.monotonic() - t0) * 1000)
+    return JSONResponse(content=_ok(resumen, ms))
 
 
 @app.get("/")
