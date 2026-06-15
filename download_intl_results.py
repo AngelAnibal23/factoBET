@@ -15,6 +15,11 @@ DESDE = "2018-01-01"
 SALIDA = "intl_results.csv"
 
 
+def _es_entero(s):
+    """True si s representa un entero (marcador valido). Excluye '', 'NA', etc."""
+    return s.lstrip("-").isdigit()
+
+
 def descargar_filtrar(url=CSV_URL, desde=DESDE, salida=SALIDA):
     resp = requests.get(url, timeout=60)
     resp.raise_for_status()
@@ -24,7 +29,8 @@ def descargar_filtrar(url=CSV_URL, desde=DESDE, salida=SALIDA):
     for r in rows:
         if r["date"] < desde:
             continue
-        if r["home_score"] == "" or r["away_score"] == "":
+        # Partidos futuros (sin jugar) traen marcador "NA" o vacio -> excluir.
+        if not _es_entero(r["home_score"]) or not _es_entero(r["away_score"]):
             continue
         filtrados.append(r)
 

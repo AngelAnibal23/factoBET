@@ -190,3 +190,93 @@ class DixonColesIntl:
                 else:        p_away += p
         total = p_home + p_draw + p_away
         return p_home / total, p_draw / total, p_away / total
+
+
+# ── Baseline ingenuo (tasas globales, neutral-aware) ──────────────────────────
+
+def baseline_tasas(train):
+    """Devuelve {neutral_bool: (p_home, p_draw, p_away)} con las frecuencias del train."""
+    tasas = {}
+    for neutral in (False, True):
+        subset = [m for m in train if m["neutral"] == neutral]
+        if not subset:
+            tasas[neutral] = (1/3, 1/3, 1/3)
+            continue
+        n = len(subset)
+        h = sum(1 for m in subset if m["resultado"] == "HOME") / n
+        d = sum(1 for m in subset if m["resultado"] == "DRAW") / n
+        a = sum(1 for m in subset if m["resultado"] == "AWAY") / n
+        tasas[neutral] = (h, d, a)
+    return tasas
+
+
+def predecir_baseline(tasas, neutral):
+    return tasas[neutral]
+
+
+# ── Main: holdout temporal + gate de Brier ────────────────────────────────────
+
+def main():
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8")
+
+    print("\n" + "=" * 60)
+    print("HELPBETOR — MOTOR INTERNACIONAL v0.1 (Dixon-Coles + neutral)")
+    print("=" * 60)
+
+    partidos = cargar_csv()
+    train = [m for m in partidos if m["fecha"] <= TRAIN_HASTA]
+    test  = [m for m in partidos if m["fecha"] >= TEST_DESDE]
+    print(f"\nTrain (<= {TRAIN_HASTA}): {len(train)} partidos")
+    print(f"Test  (>= {TEST_DESDE}): {len(test)} partidos")
+
+    ref_date = datetime.fromisoformat(TEST_DESDE).replace(tzinfo=timezone.utc)
+
+    print("\nAjustando Dixon-Coles internacional...")
+    model = DixonColesIntl().fit(train, ref_date)
+    print(f"  Convergio: {model.converged} | iteraciones: {model.n_iter}")
+    print(f"  mu={model.mu:.4f}  gamma={model.gamma:.4f}  rho={model.rho:.4f}  xi={XI}")
+    print(f"  Equipos en el modelo: {len(model.teams)}")
+
+    # Predicciones del modelo
+    preds_modelo = []
+    for m in test:
+        if m["resultado"] not in ("HOME", "DRAW", "AWAY"):
+            continue
+        ph, pd, pa = model.predict(m["home"], m["away"], m["neutral"])
+        preds_modelo.append((ph, pd, pa, m["resultado"]))
+
+    # Predicciones del baseline
+    tasas = baseline_tasas(train)
+    preds_baseline = []
+    for m in test:
+        if m["resultado"] not in ("HOME", "DRAW", "AWAY"):
+            continue
+        ph, pd, pa = predecir_baseline(tasas, m["neutral"])
+        preds_baseline.append((ph, pd, pa, m["resultado"]))
+
+    bs_modelo = brier_score(preds_modelo)
+    bs_baseline = brier_score(preds_baseline)
+    mejora_rel = (bs_baseline - bs_modelo) / bs_baseline
+
+    print("\n" + "-" * 60)
+    print(f"  Brier baseline (tasas neutral-aware): {bs_baseline:.4f}")
+    print(f"  Brier modelo Dixon-Coles            : {bs_modelo:.4f}")
+    print(f"  Mejora relativa                     : {mejora_rel*100:+.1f}%")
+    print(f"  (Referencia Liga 1 v0.2 = 0.2797)")
+    print("-" * 60)
+
+    greenlight = (bs_modelo < bs_baseline) and (mejora_rel >= 0.03)
+    if greenlight:
+        print("  VEREDICTO: ✅ GREENLIGHT — el modelo supera el baseline (>= 3%).")
+        print("  Siguiente paso: python load_intl_to_supabase.py")
+    else:
+        print("  VEREDICTO: ❌ NO PASA — el modelo no aporta señal suficiente.")
+        print("  NO cargar a Supabase. Reconsiderar (ponderacion por torneo, ventana).")
+    print("=" * 60)
+
+    return bs_modelo, bs_baseline, model
+
+
+if __name__ == "__main__":
+    main()

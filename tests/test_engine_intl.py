@@ -86,3 +86,26 @@ def test_lambda_away_no_cambia_con_neutral():
     _, la_neutral = model.lambdas("A", "B", neutral=True)
     # la ventaja de local no afecta al visitante
     assert abs(la_casa - la_neutral) < 1e-12
+
+
+from engine_intl_v01 import baseline_tasas, predecir_baseline
+
+
+def test_baseline_tasas_separa_neutral():
+    partidos = [
+        {"resultado": "HOME", "neutral": False},
+        {"resultado": "HOME", "neutral": False},
+        {"resultado": "AWAY", "neutral": False},
+        {"resultado": "DRAW", "neutral": True},
+        {"resultado": "AWAY", "neutral": True},
+    ]
+    tasas = baseline_tasas(partidos)
+    # con local: 2 HOME, 0 DRAW, 1 AWAY -> P(home)=2/3
+    assert abs(tasas[False][0] - 2/3) < 1e-9
+    # neutral: 0 HOME, 1 DRAW, 1 AWAY -> P(home)=0
+    assert abs(tasas[True][0] - 0.0) < 1e-9
+
+def test_predecir_baseline_usa_neutral():
+    tasas = {False: (0.5, 0.3, 0.2), True: (0.33, 0.34, 0.33)}
+    assert predecir_baseline(tasas, neutral=False) == (0.5, 0.3, 0.2)
+    assert predecir_baseline(tasas, neutral=True) == (0.33, 0.34, 0.33)
