@@ -86,3 +86,107 @@ def brier_score(predictions):
         o_a = 1.0 if result == "AWAY" else 0.0
         total += (ph - o_h)**2 + (pd - o_d)**2 + (pa - o_a)**2
     return (total / len(predictions)) / 2
+
+
+# ── Log-likelihood (gamma condicional a neutral) ──────────────────────────────
+
+def neg_log_likelihood(params, matches, teams, weights, l2=0.001):
+    n = len(teams)
+    alphas = params[:n]
+    betas  = params[n:2*n]
+    mu     = params[2*n]
+    gamma  = params[2*n + 1]
+    rho    = params[2*n + 2]
+
+    idx = {t: i for i, t in enumerate(teams)}
+    ll  = 0.0
+
+    for k, m in enumerate(matches):
+        i = idx[m["home"]]
+        j = idx[m["away"]]
+        x = m["gl"]
+        y = m["gv"]
+
+        g = 0.0 if m["neutral"] else gamma
+        lh = math.exp(mu + alphas[i] + betas[j] + g)
+        la = math.exp(mu + alphas[j] + betas[i])
+
+        t = tau(x, y, lh, la, rho)
+        if t <= 0:
+            return 1e12
+
+        ll += weights[k] * (
+            math.log(t)
+            + x * math.log(lh) - lh - math.lgamma(x + 1)
+            + y * math.log(la) - la - math.lgamma(y + 1)
+        )
+
+    penalty = l2 * (np.sum(alphas**2) + np.sum(betas**2))
+    return -ll + penalty
+
+
+# ── Modelo Dixon-Coles internacional ──────────────────────────────────────────
+
+class DixonColesIntl:
+
+    def fit(self, matches, ref_date):
+        self.teams = sorted(set(
+            [m["home"] for m in matches] + [m["away"] for m in matches]
+        ))
+        n = len(self.teams)
+        self.idx = {t: i for i, t in enumerate(self.teams)}
+
+        weights = np.array([time_weight(m["fecha"], ref_date) for m in matches])
+        weights /= weights.mean()
+
+        x0 = np.zeros(2 * n + 3)
+        x0[2*n]     =  0.20   # mu
+        x0[2*n + 1] =  0.30   # gamma
+        x0[2*n + 2] = -0.05   # rho
+
+        bounds = (
+            [(-2.0, 2.0)] * n +
+            [(-2.0, 2.0)] * n +
+            [(-1.0, 1.5)] +
+            [( 0.0, 1.5)] +
+            [(-0.5, 0.5)]
+        )
+
+        result = minimize(
+            neg_log_likelihood, x0,
+            args=(matches, self.teams, weights),
+            method="L-BFGS-B", bounds=bounds,
+            options={"maxiter": 2000, "ftol": 1e-12, "gtol": 1e-8},
+        )
+        p = result.x
+        self.alphas = p[:n]
+        self.betas  = p[n:2*n]
+        self.mu     = p[2*n]
+        self.gamma  = p[2*n + 1]
+        self.rho    = p[2*n + 2]
+        self.converged = result.success
+        self.n_iter = result.nit
+        return self
+
+    def lambdas(self, home, away, neutral):
+        g = 0.0 if neutral else self.gamma
+        if home in self.idx and away in self.idx:
+            i, j = self.idx[home], self.idx[away]
+            lh = math.exp(self.mu + self.alphas[i] + self.betas[j] + g)
+            la = math.exp(self.mu + self.alphas[j] + self.betas[i])
+        else:
+            lh = math.exp(self.mu + g)
+            la = math.exp(self.mu)
+        return lh, la
+
+    def predict(self, home, away, neutral):
+        lh, la = self.lambdas(home, away, neutral)
+        p_home = p_draw = p_away = 0.0
+        for x in range(MAX_GOALS + 1):
+            for y in range(MAX_GOALS + 1):
+                p = poisson.pmf(x, lh) * poisson.pmf(y, la) * tau(x, y, lh, la, self.rho)
+                if x > y:    p_home += p
+                elif x == y: p_draw += p
+                else:        p_away += p
+        total = p_home + p_draw + p_away
+        return p_home / total, p_draw / total, p_away / total

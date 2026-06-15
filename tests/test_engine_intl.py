@@ -2,6 +2,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from datetime import datetime, timezone
+
 from engine_intl_v01 import tau, brier_score, cargar_csv
 
 
@@ -48,3 +50,39 @@ def test_cargar_csv_normaliza(tmp_path):
     m1 = partidos[1]
     assert m1["neutral"] is True
     assert m1["resultado"] == "DRAW"
+
+
+from engine_intl_v01 import DixonColesIntl
+
+
+def _modelo_dos_equipos():
+    # Modelo sintético: 2 partidos entre A y B, uno en casa y otro neutral,
+    # suficiente para que fit() corra. Lo importante es probar lambdas/predict.
+    partidos = [
+        {"home": "A", "away": "B", "gl": 2, "gv": 1, "fecha": "2024-01-01",
+         "neutral": False, "resultado": "HOME"},
+        {"home": "B", "away": "A", "gl": 1, "gv": 1, "fecha": "2024-02-01",
+         "neutral": True, "resultado": "DRAW"},
+    ]
+    ref = datetime(2024, 3, 1, tzinfo=timezone.utc)
+    return DixonColesIntl().fit(partidos, ref), partidos
+
+
+def test_predict_suma_uno():
+    model, _ = _modelo_dos_equipos()
+    ph, pd, pa = model.predict("A", "B", neutral=False)
+    assert abs((ph + pd + pa) - 1.0) < 1e-9
+
+def test_ventaja_neutral_reduce_lambda_home():
+    model, _ = _modelo_dos_equipos()
+    lh_casa, _ = model.lambdas("A", "B", neutral=False)
+    lh_neutral, _ = model.lambdas("A", "B", neutral=True)
+    # con gamma >= 0, el mismo local mete >= goles en casa que en neutral
+    assert lh_casa >= lh_neutral
+
+def test_lambda_away_no_cambia_con_neutral():
+    model, _ = _modelo_dos_equipos()
+    _, la_casa = model.lambdas("A", "B", neutral=False)
+    _, la_neutral = model.lambdas("A", "B", neutral=True)
+    # la ventaja de local no afecta al visitante
+    assert abs(la_casa - la_neutral) < 1e-12
