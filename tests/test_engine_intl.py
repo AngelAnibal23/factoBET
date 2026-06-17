@@ -88,6 +88,46 @@ def test_lambda_away_no_cambia_con_neutral():
     assert abs(la_casa - la_neutral) < 1e-12
 
 
+import numpy as np
+from scipy.optimize import check_grad
+
+from engine_intl_v01 import (
+    precompute_matches, nll_and_grad, neg_log_likelihood, time_weight,
+)
+
+
+def test_gradiente_analitico_coincide_con_numerico():
+    # marcadores que ejercitan los 4 casos de tau (0-0,1-0,0-1,1-1) + neutral on/off
+    teams = ["A", "B", "C", "D"]
+    scores = [(0, 0), (1, 0), (0, 1), (1, 1), (2, 1), (3, 2), (0, 2), (2, 2)]
+    matches = []
+    for k, (gl, gv) in enumerate(scores):
+        matches.append({
+            "home": teams[k % 4], "away": teams[(k + 1) % 4],
+            "gl": gl, "gv": gv, "fecha": "2024-01-01", "neutral": (k % 2 == 0),
+        })
+    ref = datetime(2024, 3, 1, tzinfo=timezone.utc)
+    w = np.array([time_weight(m["fecha"], ref) for m in matches])
+    w /= w.mean()
+    pre = precompute_matches(matches, teams, w)
+    n = len(teams)
+
+    np.random.seed(0)
+    x = np.random.randn(2 * n + 3) * 0.2
+    x[2*n], x[2*n + 1], x[2*n + 2] = 0.2, 0.3, -0.05
+
+    f = lambda p: neg_log_likelihood(p, pre, n)
+    g = lambda p: nll_and_grad(p, pre, n)[1]
+
+    # el valor de neg_log_likelihood y el de nll_and_grad deben coincidir
+    val_only = neg_log_likelihood(x, pre, n)
+    val_pair, _ = nll_and_grad(x, pre, n)
+    assert abs(val_only - val_pair) < 1e-12
+
+    # gradiente analitico vs diferencias finitas (error al nivel del ruido de FD)
+    assert check_grad(f, g, x, epsilon=1.5e-8) < 1e-4
+
+
 from engine_intl_v01 import baseline_tasas, predecir_baseline
 
 

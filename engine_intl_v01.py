@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from scipy.optimize import minimize
+from scipy.special import gammaln
 from scipy.stats import poisson
 
 warnings.filterwarnings("ignore")
@@ -90,39 +91,135 @@ def brier_score(predictions):
 
 # ── Log-likelihood (gamma condicional a neutral) ──────────────────────────────
 
-def neg_log_likelihood(params, matches, teams, weights, l2=0.001):
-    n = len(teams)
+def precompute_matches(matches, teams, weights):
+    """Convierte la lista de partidos a arrays numpy una sola vez.
+
+    Los indices de equipo, goles, flag neutral y pesos son CONSTANTES durante
+    toda la optimizacion (solo cambian los params), asi que se calculan aqui y
+    se reutilizan en cada evaluacion de la verosimilitud.
+    """
+    idx = {t: i for i, t in enumerate(teams)}
+    M = len(matches)
+    hi = np.empty(M, dtype=np.intp)
+    aj = np.empty(M, dtype=np.intp)
+    x = np.empty(M, dtype=np.float64)
+    y = np.empty(M, dtype=np.float64)
+    not_neutral = np.empty(M, dtype=np.float64)
+    for k, m in enumerate(matches):
+        hi[k] = idx[m["home"]]
+        aj[k] = idx[m["away"]]
+        x[k] = m["gl"]
+        y[k] = m["gv"]
+        not_neutral[k] = 0.0 if m["neutral"] else 1.0
+    return {
+        "hi": hi, "aj": aj, "x": x, "y": y,
+        "w": np.asarray(weights, dtype=np.float64),
+        "not_neutral": not_neutral,
+        "lgx": gammaln(x + 1.0),
+        "lgy": gammaln(y + 1.0),
+        # mascaras de los 4 casos de la correccion Dixon-Coles (resto -> tau=1)
+        "m00": (x == 0) & (y == 0),
+        "m10": (x == 1) & (y == 0),
+        "m01": (x == 0) & (y == 1),
+        "m11": (x == 1) & (y == 1),
+    }
+
+
+def nll_and_grad(params, pre, n, l2=0.001):
+    """Verosimilitud negativa vectorizada + gradiente analitico (jac=True).
+
+    Devuelve (nll, grad). La ventaja de local (gamma) solo se suma cuando
+    not_neutral == 1.0. El gradiente exacto evita el coste del gradiente
+    numerico (~2n+3 evals por paso), permitiendo que L-BFGS-B converja de
+    verdad en lugar de cortarse por maxfun.
+
+    Layout de params/grad: [alphas(n), betas(n), mu, gamma, rho].
+    """
     alphas = params[:n]
     betas  = params[n:2*n]
     mu     = params[2*n]
     gamma  = params[2*n + 1]
     rho    = params[2*n + 2]
 
-    idx = {t: i for i, t in enumerate(teams)}
-    ll  = 0.0
+    hi, aj = pre["hi"], pre["aj"]
+    x, y, w = pre["x"], pre["y"], pre["w"]
+    nn = pre["not_neutral"]
 
-    for k, m in enumerate(matches):
-        i = idx[m["home"]]
-        j = idx[m["away"]]
-        x = m["gl"]
-        y = m["gv"]
+    log_lh = mu + alphas[hi] + betas[aj] + nn * gamma
+    log_la = mu + alphas[aj] + betas[hi]
+    lh = np.exp(log_lh)
+    la = np.exp(log_la)
 
-        g = 0.0 if m["neutral"] else gamma
-        lh = math.exp(mu + alphas[i] + betas[j] + g)
-        la = math.exp(mu + alphas[j] + betas[i])
+    m00, m10, m01, m11 = pre["m00"], pre["m10"], pre["m01"], pre["m11"]
+    raw00 = 1.0 - lh * la * rho   # solo significativo donde m00
+    tau_arr = np.ones_like(lh)
+    tau_arr[m00] = np.maximum(1e-10, raw00[m00])
+    tau_arr[m10] = 1.0 + la[m10] * rho
+    tau_arr[m01] = 1.0 + lh[m01] * rho
+    tau_arr[m11] = max(1e-10, 1.0 - rho)
+    if np.any(tau_arr <= 0.0):
+        # region infeasible (m10/m01 con tau<=0): el valor enorme hace que el
+        # line search la rechace; el gradiente cero no guia mal porque domina f.
+        return 1e12, np.zeros_like(params)
 
-        t = tau(x, y, lh, la, rho)
-        if t <= 0:
-            return 1e12
+    # ── Valor ──
+    ll = np.sum(w * (
+        np.log(tau_arr)
+        + x * log_lh - lh - pre["lgx"]
+        + y * log_la - la - pre["lgy"]
+    ))
+    penalty = l2 * (np.dot(alphas, alphas) + np.dot(betas, betas))
+    nll = -ll + penalty
 
-        ll += weights[k] * (
-            math.log(t)
-            + x * math.log(lh) - lh - math.lgamma(x + 1)
-            + y * math.log(la) - la - math.lgamma(y + 1)
-        )
+    # ── Gradiente de log tau respecto a log_lh, log_la y rho ──
+    # (d tau/d lh)*lh = d tau/d log_lh, etc. Solo los 4 casos corregidos aportan.
+    inv = 1.0 / tau_arr
+    dT_dloglh = np.zeros_like(lh)
+    dT_dlogla = np.zeros_like(lh)
+    dT_drho   = np.zeros_like(lh)
 
-    penalty = l2 * (np.sum(alphas**2) + np.sum(betas**2))
-    return -ll + penalty
+    # m00: tau = 1 - lh*la*rho (donde no esta clampeado a 1e-10)
+    act00 = m00 & (raw00 > 1e-10)
+    coef00 = (-lh[act00] * la[act00] * rho) * inv[act00]
+    dT_dloglh[act00] = coef00
+    dT_dlogla[act00] = coef00
+    dT_drho[act00]   = (-lh[act00] * la[act00]) * inv[act00]
+
+    # m10: tau = 1 + la*rho  (sin dependencia de lh)
+    dT_dlogla[m10] = (la[m10] * rho) * inv[m10]
+    dT_drho[m10]   = la[m10] * inv[m10]
+
+    # m01: tau = 1 + lh*rho  (sin dependencia de la)
+    dT_dloglh[m01] = (lh[m01] * rho) * inv[m01]
+    dT_drho[m01]   = lh[m01] * inv[m01]
+
+    # m11: tau = 1 - rho  (sin dependencia de lh/la)
+    dT_drho[m11] = -1.0 * inv[m11]
+
+    # ── Gradiente de la log-verosimilitud por partido ──
+    # d ll/d log_lh = (x - lh) + dT/d log_lh ; idem para log_la con y, la.
+    wG_lh = w * ((x - lh) + dT_dloglh)
+    wG_la = w * ((y - la) + dT_dlogla)
+
+    grad = np.empty_like(params)
+    # alpha_i aparece en log_lh del local (hi) y en log_la del visitante (aj)
+    grad_alpha = np.bincount(hi, wG_lh, minlength=n) + np.bincount(aj, wG_la, minlength=n)
+    # beta_j aparece en log_lh (beta_aj) y en log_la (beta_hi)
+    grad_beta  = np.bincount(aj, wG_lh, minlength=n) + np.bincount(hi, wG_la, minlength=n)
+
+    # NLL = -ll + penalty  ->  signo negativo, mas derivada de la penalizacion L2
+    grad[:n]      = -grad_alpha + 2.0 * l2 * alphas
+    grad[n:2*n]   = -grad_beta  + 2.0 * l2 * betas
+    grad[2*n]     = -np.sum(wG_lh + wG_la)            # mu
+    grad[2*n + 1] = -np.sum(wG_lh * nn)               # gamma (solo log_lh, condicional a neutral)
+    grad[2*n + 2] = -np.sum(w * dT_drho)              # rho (solo via tau)
+    return nll, grad
+
+
+def neg_log_likelihood(params, pre, n, l2=0.001):
+    """Solo el valor de la verosimilitud negativa. Delega en nll_and_grad para
+    mantener una unica fuente de verdad del calculo."""
+    return nll_and_grad(params, pre, n, l2)[0]
 
 
 # ── Modelo Dixon-Coles internacional ──────────────────────────────────────────
@@ -138,6 +235,7 @@ class DixonColesIntl:
 
         weights = np.array([time_weight(m["fecha"], ref_date) for m in matches])
         weights /= weights.mean()
+        pre = precompute_matches(matches, self.teams, weights)
 
         x0 = np.zeros(2 * n + 3)
         x0[2*n]     =  0.20   # mu
@@ -152,11 +250,16 @@ class DixonColesIntl:
             [(-0.5, 0.5)]
         )
 
+        # Gradiente analitico (jac=True): cada paso cuesta 1 eval en vez de ~(2n+3),
+        # asi cada iteracion es barata y L-BFGS-B converge por ftol (~3.4k iter, ~5s).
+        # maxiter holgado: el corte real es la reduccion relativa de f, no el numero
+        # de pasos. gtol no aplica: muchas selecciones raras quedan en sus bounds
+        # (gradiente proyectado ~0, pero ||grad|| completo se mantiene > 0).
         result = minimize(
-            neg_log_likelihood, x0,
-            args=(matches, self.teams, weights),
+            nll_and_grad, x0,
+            args=(pre, n), jac=True,
             method="L-BFGS-B", bounds=bounds,
-            options={"maxiter": 2000, "ftol": 1e-12, "gtol": 1e-8},
+            options={"maxiter": 20000, "ftol": 1e-12, "gtol": 1e-8},
         )
         p = result.x
         self.alphas = p[:n]
