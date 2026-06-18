@@ -29,6 +29,7 @@ from supabase import create_client
 from dotenv import load_dotenv
 
 from validator import ValidatedParlay, ValidatedSelection
+from engine_intl_v01 import DixonColesIntl
 
 warnings.filterwarnings("ignore")
 load_dotenv()
@@ -36,6 +37,11 @@ load_dotenv()
 MAX_GOALS      = 10
 XI             = 0.004   # optimal decay rate found in v0.2
 KELLY_FRACTION = 0.20    # always fractional, never full Kelly
+
+# Liga "Internacional" (Mundial 2026) — params congelados en parametros_modelo.
+LIGA_INTERNACIONAL_ID = "cc1ffe11-7ba1-4a86-9d35-e6eedbe2ec38"
+# Anfitriones 2026: de local reciben ventaja (gamma); el resto juega neutral.
+HOSTS_2026 = {"United States", "Mexico", "Canada"}
 
 # Typical overround by bookmaker (used for margin removal)
 BOOKMAKER_MARGINS = {
@@ -291,6 +297,77 @@ def _prob_for_selection(
     return round(p, 6) if p is not None else None, round(lh, 4), round(la, 4)
 
 
+# ── Internacional (Mundial): predicción con params congelados ─────────────────
+
+def _prob_1x2(lh: float, la: float, rho: float) -> tuple[float, float, float]:
+    """1X2 a partir de lambdas + rho (libre de modelo, reusable por Liga 1 e intl)."""
+    ph = pd = pa = 0.0
+    for x in range(MAX_GOALS + 1):
+        for y in range(MAX_GOALS + 1):
+            p = poisson.pmf(x, lh) * poisson.pmf(y, la) * _tau(x, y, lh, la, rho)
+            if   x > y:  ph += p
+            elif x == y: pd += p
+            else:        pa += p
+    total = ph + pd + pa
+    return ph / total, pd / total, pa / total
+
+
+def _prob_for_selection_intl(
+    model: DixonColesIntl,
+    sel: ValidatedSelection,
+    neutral: bool,
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    """Espejo de _prob_for_selection para el motor internacional.
+
+    Reusa TAL CUAL los calculadores de mercado (_prob_over_under/_prob_btts/
+    _prob_handicap) alimentándolos con (lh, la); el 1X2 usa el rho intl. La
+    única diferencia con Liga 1 es la fuente de lambdas: el predictor name-keyed
+    cargado de parametros_modelo, con la ventaja de local condicional a neutral.
+    """
+    if sel.mercado_exotico:
+        return None, None, None
+
+    home = sel.local_match.canonical
+    away = sel.visitante_match.canonical if sel.visitante_match else None
+    if not away:
+        return None, None, None
+
+    lh, la = model.lambdas(home, away, neutral)
+
+    if sel.mercado == "1X2":
+        ph, pd, pa = _prob_1x2(lh, la, model.rho)
+        p = {"home": ph, "draw": pd, "away": pa}.get(sel.seleccion)
+    elif sel.mercado == "over_under":
+        line = sel.linea if sel.linea is not None else 2.5
+        p = _prob_over_under(lh, la, line, sel.seleccion)
+    elif sel.mercado == "btts":
+        p = _prob_btts(lh, la, sel.seleccion)
+    elif sel.mercado == "handicap":
+        line = sel.linea if sel.linea is not None else 0.0
+        p = _prob_handicap(lh, la, line, sel.seleccion)
+    else:
+        return None, None, None
+
+    return round(p, 6) if p is not None else None, round(lh, 4), round(la, 4)
+
+
+def _coverage_intl(home_in: bool, away_in: bool, exotic: bool, no_away: bool) -> tuple[str, list[str]]:
+    """Cobertura para selecciones nacionales: ALTA si ambos equipos están en los
+    parámetros congelados, BAJA si falta alguno (sin query de conteos)."""
+    if exotic:
+        return "NULA", ["Mercado exotico: sin modelo estadistico disponible."]
+    if no_away:
+        return "BAJA", ["No se identifico equipo visitante: lambdas no calculables."]
+    if home_in and away_in:
+        return "ALTA", []
+    faltan = []
+    if not home_in:
+        faltan.append("local")
+    if not away_in:
+        faltan.append("visitante")
+    return "BAJA", [f"Seleccion(es) sin parametros en el modelo internacional: {', '.join(faltan)}."]
+
+
 # ── Kelly criterion ───────────────────────────────────────────────────────────
 
 def _fractional_kelly(prob_modelo: float, cuota: float) -> Optional[float]:
@@ -428,19 +505,202 @@ def _load_and_fit() -> tuple[DixonColesModel, list[dict], dict[str, int]]:
     return _cached_model, _cached_matches, _cached_counts   # type: ignore[return-value]
 
 
+# ── Internacional: predictor congelado + mapa de ruteo (cache 6h) ─────────────
+
+_cached_intl_model: DixonColesIntl | None = None
+_intl_cache_ts:     datetime | None       = None
+
+_cached_team_liga:  dict[str, str] | None  = None
+_team_liga_ts:      datetime | None        = None
+
+
+def _load_intl_predictor() -> DixonColesIntl:
+    """Carga el predictor internacional desde parametros_modelo (is_production).
+
+    A diferencia de Liga 1 (que reajusta en cada warm_up), aqui solo se LEEN los
+    parametros congelados de Sub-proyecto A. Sin fila de produccion -> fail loud.
+    """
+    global _cached_intl_model, _intl_cache_ts
+    now = datetime.now(tz=timezone.utc)
+    expired = (
+        _intl_cache_ts is None or
+        (now - _intl_cache_ts).total_seconds() > MODEL_TTL_HOURS * 3600
+    )
+    if expired:
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        rows = (
+            sb.table("parametros_modelo")
+            .select("mu, gamma, rho, attack_params, defense_params")
+            .eq("liga_id", LIGA_INTERNACIONAL_ID)
+            .eq("is_production", True)
+            .execute()
+            .data
+        )
+        if not rows:
+            raise RuntimeError(
+                "No hay parametros_modelo de produccion para la liga Internacional. "
+                "Ejecuta load_intl_to_supabase.py (Sub-proyecto A) antes de analizar parlays del Mundial."
+            )
+        r = rows[0]
+        _cached_intl_model = DixonColesIntl.from_params(
+            mu=float(r["mu"]), gamma=float(r["gamma"]), rho=float(r["rho"]),
+            attack=r["attack_params"], defense=r["defense_params"],
+        )
+        _intl_cache_ts = now
+    return _cached_intl_model   # type: ignore[return-value]
+
+
+def _load_team_liga_map() -> dict[str, str]:
+    """Mapa equipo_id -> "liga1" | "internacional" para rutear cada parlay."""
+    global _cached_team_liga, _team_liga_ts
+    now = datetime.now(tz=timezone.utc)
+    expired = (
+        _team_liga_ts is None or
+        (now - _team_liga_ts).total_seconds() > MODEL_TTL_HOURS * 3600
+    )
+    if expired:
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        rows = sb.table("equipos").select("id, liga_id").execute().data
+        _cached_team_liga = {
+            r["id"]: ("internacional" if r["liga_id"] == LIGA_INTERNACIONAL_ID else "liga1")
+            for r in rows
+        }
+        _team_liga_ts = now
+    return _cached_team_liga   # type: ignore[return-value]
+
+
+def _liga_de_parlay(parlay: ValidatedParlay, team_liga_map: dict[str, str]) -> str:
+    """Devuelve "liga1" | "internacional" | "mixto" según las ligas de los
+    equipos matcheados. Mixto (Liga 1 + Internacional) se rechaza aguas arriba."""
+    ligas: set[str] = set()
+    for sel in parlay.selecciones:
+        ids = [sel.local_match.equipo_id]
+        if sel.visitante_match:
+            ids.append(sel.visitante_match.equipo_id)
+        for tid in ids:
+            if tid and tid in team_liga_map:
+                ligas.add(team_liga_map[tid])
+
+    if "internacional" in ligas and "liga1" in ligas:
+        return "mixto"
+    if ligas == {"internacional"}:
+        return "internacional"
+    return "liga1"   # solo liga1, o sin equipos reconocidos -> comportamiento original
+
+
 def warm_up() -> None:
-    """Pre-load and fit the model. Call at server startup."""
-    _load_and_fit()
+    """Pre-load and fit the models. Call at server startup."""
+    _load_and_fit()             # Liga 1: ajusta Dixon-Coles
+    _load_team_liga_map()       # ruteo
+    _load_intl_predictor()      # Internacional: params congelados
 
 
 # ── Main public function ──────────────────────────────────────────────────────
+
+def _analyze_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> ParlayAnalysis:
+    """Analisis de un parlay de selecciones nacionales (Mundial 2026).
+
+    Espejea analyze() pero usa el predictor congelado (name-keyed), aplica la
+    regla anfitrion/neutral, y deriva la cobertura de la presencia en params
+    (no de conteos de partidos). Reusa correlaciones y nivel de confianza.
+    """
+    casa = (parlay.casa_apuestas or "").lower().strip()
+    margin = BOOKMAKER_MARGINS.get(casa, DEFAULT_MARGIN)
+
+    analyses: list[SelectionAnalysis] = []
+    for sel in parlay.selecciones:
+        home = sel.local_match.canonical
+        away = sel.visitante_match.canonical if sel.visitante_match else None
+        away_id = sel.visitante_match.equipo_id if sel.visitante_match else None
+
+        # Regla anfitrion: solo USA/MEX/CAN reciben ventaja de local; resto neutral.
+        neutral = home not in HOSTS_2026
+
+        home_in = bool(home) and (home in model.idx)
+        away_in = bool(away) and (away in model.idx)
+        nivel_cov, alertas_cov = _coverage_intl(
+            home_in, away_in, exotic=sel.mercado_exotico, no_away=(away is None),
+        )
+
+        prob_impl_adj = round(sel.prob_implicita / (1 + margin), 6)
+        prob_mod, lh, la = _prob_for_selection_intl(model, sel, neutral)
+
+        if prob_mod is not None:
+            edge       = round(prob_mod - prob_impl_adj, 6)
+            kelly_frac = _fractional_kelly(prob_mod, sel.cuota)
+        else:
+            edge       = None
+            kelly_frac = None
+
+        alertas = list(alertas_cov)
+        if edge is not None and edge < -0.05:
+            alertas.append("La casa tiene ventaja estadistica clara en esta seleccion.")
+        if sel.mercado_exotico:
+            alertas.append("Mercado exotico: el modelo no puede validar esta seleccion.")
+
+        analyses.append(SelectionAnalysis(
+            equipo_local          = home,
+            equipo_visitante      = away,
+            equipo_local_id       = sel.local_match.equipo_id,
+            equipo_visitante_id   = away_id,
+            mercado               = sel.mercado,
+            seleccion             = sel.seleccion,
+            cuota                 = sel.cuota,
+            linea                 = sel.linea,
+            prob_implicita        = sel.prob_implicita,
+            prob_implicita_adj    = prob_impl_adj,
+            prob_modelo           = prob_mod,
+            lambda_home           = lh,
+            lambda_away           = la,
+            edge                  = edge,
+            kelly_fraccion        = kelly_frac,
+            nivel_cobertura       = nivel_cov,
+            mercado_exotico       = sel.mercado_exotico,
+            n_partidos_local      = 0,   # intl: cobertura por params, no por conteos
+            n_partidos_visitante  = 0,
+            alertas               = alertas,
+        ))
+
+    modeled = [a.prob_modelo for a in analyses if a.prob_modelo is not None]
+    prob_parlay_modelo = round(math.prod(modeled), 6) if modeled else None
+    prob_parlay_impl   = round(math.prod(a.prob_implicita_adj for a in analyses), 6)
+
+    correlaciones = _detect_correlations(parlay.selecciones)
+    nivel_conf, razones_conf = _confidence(analyses, correlaciones)
+
+    return ParlayAnalysis(
+        selecciones         = analyses,
+        prob_parlay_modelo  = prob_parlay_modelo,
+        prob_parlay_impl    = prob_parlay_impl,
+        cuota_total         = parlay.cuota_total,
+        casa_apuestas       = parlay.casa_apuestas,
+        nivel_confianza     = nivel_conf,
+        razones_confianza   = razones_conf,
+        correlaciones       = correlaciones,
+        version_modelo      = "intl_v0.1",
+        margen_aplicado     = margin,
+    )
+
 
 def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
     """
     Full statistical analysis of a validated parlay.
 
-    Loads matches from Supabase, fits Dixon-Coles, and returns ParlayAnalysis.
+    Routes to Liga 1 (refit Dixon-Coles) or Internacional (frozen params) based
+    on the leagues of the matched teams. A mixed parlay (Liga 1 + Internacional)
+    is rejected — it has no statistical meaning and usually signals a fuzzy
+    cross-match.
     """
+    team_liga_map = _load_team_liga_map()
+    liga = _liga_de_parlay(parlay, team_liga_map)
+    if liga == "mixto":
+        raise ValueError(
+            "Parlay mixto: combina equipos de Liga 1 Peruana y selecciones "
+            "internacionales. No es analizable como un solo parlay; sube boletos separados."
+        )
+    if liga == "internacional":
+        return _analyze_intl(parlay, _load_intl_predictor())
+
     model, _, team_match_count = _load_and_fit()
 
     # Determine bookmaker margin
