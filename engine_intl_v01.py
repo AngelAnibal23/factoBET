@@ -226,6 +226,27 @@ def neg_log_likelihood(params, pre, n, l2=0.001):
 
 class DixonColesIntl:
 
+    @classmethod
+    def from_params(cls, mu, gamma, rho, attack, defense):
+        """Construye un predictor desde parametros congelados, SIN ajustar.
+
+        Patron del Mundial (Sub-proyecto B): los params de produccion viven en
+        `parametros_modelo` (Supabase) y se cargan tal cual; no se reajusta en
+        cada warm_up como hace Liga 1. `attack`/`defense` son dicts
+        {nombre_seleccion: valor}. Deben compartir el mismo conjunto de claves.
+        """
+        model = cls()
+        model.teams = sorted(attack)
+        model.idx = {t: i for i, t in enumerate(model.teams)}
+        model.alphas = np.array([attack[t] for t in model.teams], dtype=np.float64)
+        model.betas = np.array([defense[t] for t in model.teams], dtype=np.float64)
+        model.mu = float(mu)
+        model.gamma = float(gamma)
+        model.rho = float(rho)
+        model.converged = True   # cargado, no ajustado
+        model.n_iter = 0
+        return model
+
     def fit(self, matches, ref_date):
         self.teams = sorted(set(
             [m["home"] for m in matches] + [m["away"] for m in matches]

@@ -128,6 +128,52 @@ def test_gradiente_analitico_coincide_con_numerico():
     assert check_grad(f, g, x, epsilon=1.5e-8) < 1e-4
 
 
+import math
+
+
+def test_from_params_predict_suma_uno():
+    attack = {"A": 0.5, "B": -0.3}
+    defense = {"A": -0.2, "B": 0.1}
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack=attack, defense=defense)
+    ph, pd, pa = model.predict("A", "B", neutral=False)
+    assert abs((ph + pd + pa) - 1.0) < 1e-9
+    assert model.converged is True
+
+
+def test_from_params_lambdas_explicitas():
+    # con valores conocidos, lambdas debe coincidir con la formula a mano
+    attack = {"A": 0.5, "B": -0.3}
+    defense = {"A": -0.2, "B": 0.1}
+    mu, gamma = 0.2, 0.3
+    model = DixonColesIntl.from_params(mu=mu, gamma=gamma, rho=-0.05,
+                                       attack=attack, defense=defense)
+    lh, la = model.lambdas("A", "B", neutral=False)
+    # lh = exp(mu + alpha_A + beta_B + gamma); la = exp(mu + alpha_B + beta_A)
+    assert abs(lh - math.exp(mu + 0.5 + 0.1 + gamma)) < 1e-9
+    assert abs(la - math.exp(mu + (-0.3) + (-0.2))) < 1e-9
+
+
+def test_from_params_neutral_quita_gamma():
+    attack = {"A": 0.5, "B": -0.3}
+    defense = {"A": -0.2, "B": 0.1}
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack=attack, defense=defense)
+    lh_casa, _ = model.lambdas("A", "B", neutral=False)
+    lh_neutral, _ = model.lambdas("A", "B", neutral=True)
+    assert lh_casa > lh_neutral
+    assert abs(lh_neutral - math.exp(0.2 + 0.5 + 0.1)) < 1e-9
+
+
+def test_from_params_equipo_desconocido_cae_a_mu():
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack={"A": 0.5}, defense={"A": -0.2})
+    # "Z" no existe -> fallback a exp(mu) (+gamma en local)
+    lh, la = model.lambdas("Z", "Y", neutral=True)
+    assert abs(lh - math.exp(0.2)) < 1e-9
+    assert abs(la - math.exp(0.2)) < 1e-9
+
+
 from engine_intl_v01 import baseline_tasas, predecir_baseline
 
 
