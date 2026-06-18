@@ -75,13 +75,13 @@ def _get_teams() -> list[dict]:
 
 # ── Response helpers ──────────────────────────────────────────────────────────
 
-def _ok(data: dict, duracion_ms: int) -> dict:
+def _ok(data: dict, duracion_ms: int, version_modelo: str = MODEL_VERSION) -> dict:
     return {
         "success": True,
         "data": data,
         "error": None,
         "meta": {
-            "version_modelo": MODEL_VERSION,
+            "version_modelo": version_modelo,
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
             "duracion_ms": duracion_ms,
         },
@@ -239,6 +239,15 @@ async def analizar_parlay(
     # 4. Statistical analysis
     try:
         result = analyze(parlay)
+    except ValueError as e:
+        # Parlay mixto (Liga 1 + Internacional): no analizable como un solo boleto.
+        ms = int((time.monotonic() - t0) * 1000)
+        return JSONResponse(
+            status_code=422,
+            content=_err("PARLAY_MIXTO",
+                         "El parlay mezcla equipos de Liga 1 y selecciones internacionales.",
+                         str(e), ms),
+        )
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
         return JSONResponse(
@@ -267,7 +276,7 @@ async def analizar_parlay(
     data["image_hash"] = image_hash
     data["parlay_id"]  = parlay_id
 
-    return JSONResponse(content=_ok(data, ms))
+    return JSONResponse(content=_ok(data, ms, result.version_modelo))
 
 
 @app.get("/api/v1/modelo/estado")
@@ -277,13 +286,17 @@ async def modelo_estado():
     ms     = int((time.monotonic() - t0) * 1000)
     return JSONResponse(content=_ok({
         "version_activa":     MODEL_VERSION,
-        "ligas_cubiertas":    1,
+        "ligas_cubiertas":    2,
         "liga_principal":     "Liga 1 Peruana",
+        "ligas": [
+            {"nombre": "Liga 1 Peruana", "modelo": "v0.2",      "brier_score": 0.2797},
+            {"nombre": "Internacional",  "modelo": "intl_v0.1", "brier_score": 0.2470},
+        ],
         "equipos_cargados":   len(teams),
         "brier_score_actual": 0.2797,
         "target_brier":       0.25,
         "estado":             "operativo",
-        "fase":               "Phase 3 — narrativa LLM activa (Gemini 2.5 Flash)",
+        "fase":               "Phase 5 — Mundial 2026 integrado (ruteo Liga 1 / Internacional)",
     }, ms))
 
 

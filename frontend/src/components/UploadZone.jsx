@@ -57,7 +57,7 @@ export default function UploadZone({ onFile, file, onSubmit, loading }) {
 
         {!file ? (
           <>
-            <div className="upload-league-pill">Liga 1 Peruana</div>
+            <div className="upload-league-pill">Liga 1 Peruana · Mundial 2026</div>
             <div className="upload-icon-wrap"><UploadIcon /></div>
             <div className="upload-title">Sube tu parlay</div>
             <div className="upload-sub">

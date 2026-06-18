@@ -64,7 +64,7 @@ export default function App() {
         <div className="topbar-logo">
           <LogoBars />
           <span className="logo-name">helpBETOR</span>
-          <span className="logo-tag">Auditor estadístico<br />Liga 1 Peruana</span>
+          <span className="logo-tag">Auditor estadístico<br />Liga 1 · Mundial 2026</span>
         </div>
 
         <div className="status-pill">
