@@ -19,3 +19,21 @@ def test_scoreline_matrix_rho_adjusts_low_score_cells():
     assert abs(dc.sum() - 1.0) < 1e-9
     assert dc[0, 0] != base[0, 0]   # rho redistribuye la celda 0-0
     assert dc[3, 2] > 0
+
+
+def test_parse_exact_score_ok():
+    assert betbuilder.parse_exact_score("1-3") == (1, 3)
+    assert betbuilder.parse_exact_score(" 10-0 ") == (10, 0)
+    assert betbuilder.parse_exact_score("0-0") == (0, 0)
+
+
+def test_parse_exact_score_malformed():
+    with pytest.raises(ValueError):
+        betbuilder.parse_exact_score("1:3")
+    with pytest.raises(ValueError):
+        betbuilder.parse_exact_score("abc")
+
+
+def test_parse_exact_score_out_of_range():
+    with pytest.raises(ValueError):
+        betbuilder.parse_exact_score("11-0")
