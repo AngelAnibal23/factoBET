@@ -43,12 +43,17 @@ Tu única tarea: extraer las selecciones del parlay que aparece en la imagen y d
 REGLAS ESTRICTAS:
 1. Responde SOLO con JSON válido. Cero texto antes o después.
 2. No inventes datos. Si un campo no está visible, usa null.
-3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, exotic
-4. Para "seleccion" en mercado 1X2 usa: home, draw, away
-   Para over_under usa: over, under
-   Para btts usa: yes, no
-   Para handicap usa: home, away (el equipo con handicap)
-   Para exotic usa el texto exacto visible (ej: "primer goleador Guerrero")
+3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, resultado_exacto, exotic
+4. Para "seleccion":
+   - 1X2: home, draw, away
+   - over_under: over, under  (SOLO goles de partido completo)
+   - btts: yes, no
+   - handicap: home, away (el equipo con handicap)
+   - resultado_exacto: el marcador como "local-visitante", ej "1-3" (Marcador exacto)
+   - exotic: el texto exacto visible (ej: "primer goleador Guerrero")
+4b. CLASIFICA COMO "exotic" (no inventes over_under): córners, tarjetas, tiros/remates,
+    saques de esquina, goles de PRIMER TIEMPO o SEGUNDO TIEMPO, y cualquier prop de jugador
+    individual (anota, asiste, tiros del jugador). El modelo solo valora goles de partido completo.
 5. "cuota" debe ser número decimal (ej: 1.85, 2.30). Si ves cuotas americanas (+150) conviértelas.
 6. "linea" solo para over_under y handicap (ej: 2.5 para over 2.5, -1.5 para handicap -1.5).
 7. "cuota_total" es la cuota combinada del parlay completo si aparece en la imagen.
