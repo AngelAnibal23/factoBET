@@ -56,6 +56,31 @@ def _weakest_selection(sels: list[SelectionAnalysis]) -> SelectionAnalysis | Non
     return min(modeladas, key=lambda s: (s.prob_modelo, -(s.edge or 0)))
 
 
+def _build_prompt_bet_builder(analysis: ParlayAnalysis) -> str:
+    techo = analysis.prob_techo
+    impl  = analysis.prob_impl_combinada
+    techo_txt = f"{techo:.1%}" if techo is not None else "N/A"
+    impl_txt  = f"{impl:.1%}" if impl is not None else "N/A"
+    exoticas = "; ".join(analysis.exoticas_desc) or "ninguna"
+    veredictos = {
+        "SIN_VALOR": "SIN VALOR: incluso en el mejor caso (techo) la probabilidad no supera lo que paga la cuota.",
+        "NO_CONCLUYENTE": "NO CONCLUYENTE: el subconjunto modelable deja margen, pero las patas no modelables bajan la probabilidad real un factor desconocido.",
+        "VALOR": "VALOR: todas las patas son modelables y el techo (= probabilidad real) supera lo que paga la cuota.",
+        "NO_EVALUABLE": "NO EVALUABLE: ninguna pata es modelable; no se puede formar un techo.",
+    }
+    return (
+        "Eres un auditor estadístico de apuestas. Explica en español claro y honesto, en 2-3 párrafos, "
+        "el veredicto de este BET BUILDER (varias apuestas del mismo partido bajo una sola cuota combinada). "
+        "No prometas resultados. No inventes números.\n\n"
+        f"Veredicto: {analysis.veredicto} — {veredictos.get(analysis.veredicto, '')}\n"
+        f"Patas modelables (goles/resultado): {analysis.n_modelables}. Patas no modelables: {analysis.n_exoticas} ({exoticas}).\n"
+        f"Techo del subconjunto modelable: {techo_txt}. La casa paga como si la probabilidad fuera: {impl_txt} (1/cuota).\n"
+        f"Cuota combinada: {analysis.cuota_total}.\n\n"
+        "Explica qué significa el 'techo' (cota superior porque las patas no modelables solo bajan la probabilidad) "
+        "y por qué el veredicto se sostiene. Cierra con una recomendación prudente de gestión de bankroll."
+    )
+
+
 def _build_prompt(analysis: ParlayAnalysis) -> str:
     prob_base   = analysis.prob_parlay_modelo or analysis.prob_parlay_impl
     framing     = _framing_n(prob_base)
@@ -152,7 +177,10 @@ def generate_narrative(analysis: ParlayAnalysis) -> str | None:
         log.warning("GEMINI_API_KEY not set — skipping narrative")
         return None
 
-    prompt = _build_prompt(analysis)
+    if getattr(analysis, "es_bet_builder", False):
+        prompt = _build_prompt_bet_builder(analysis)
+    else:
+        prompt = _build_prompt(analysis)
 
     client = genai.Client(api_key=key)
     try:

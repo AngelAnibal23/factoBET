@@ -212,3 +212,22 @@ def test_generate_narrative_no_api_key(monkeypatch):
     analysis = _make_analysis()
     result = generate_narrative(analysis)
     assert result is None
+
+
+from analyzer import ParlayAnalysis as _PA
+import narrator as _narrator
+
+
+def test_bet_builder_prompt_mentions_verdict_and_ceiling():
+    res = _PA(
+        selecciones=[], prob_parlay_modelo=None, prob_parlay_impl=None,
+        cuota_total=4.45, casa_apuestas="Betano", nivel_confianza="MEDIA",
+        razones_confianza=[], correlaciones=[], version_modelo="intl_v0.1",
+        es_bet_builder=True, veredicto="SIN_VALOR", prob_techo=0.18,
+        prob_impl_combinada=0.2247, n_modelables=2, n_exoticas=4,
+        exoticas_desc=["Más 7.5 córners", "Luis Díaz anota"],
+    )
+    prompt = _narrator._build_prompt_bet_builder(res)
+    assert "SIN_VALOR" in prompt
+    assert "18" in prompt        # techo 18%
+    assert "córners" in prompt.lower() or "corners" in prompt.lower()
