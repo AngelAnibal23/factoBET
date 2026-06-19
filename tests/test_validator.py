@@ -40,3 +40,59 @@ def test_sin_alias_alemania_no_matchea_germany():
     m = _best_match("Alemania", TEAMS_SIN_ALIAS)
     assert m.score < MATCH_AUTO
     assert m.canonical != "Germany" or m.status != "MATCHED"
+
+
+# ── Bet builder (Fase 1) ──────────────────────────────────────────────────────
+
+import pytest
+import validator
+from validator import validate, _is_bet_builder
+
+_TEAMS = [
+    {"id": "U1", "nombre_oficial": "Uzbekistan", "aliases": ["Uzbekistán"]},
+    {"id": "C1", "nombre_oficial": "Colombia", "aliases": []},
+]
+
+
+def test_is_bet_builder_true():
+    ocr = {
+        "cuota_total": 4.45,
+        "selecciones": [
+            {"equipo_local": "Uzbekistan", "equipo_visitante": "Colombia",
+             "mercado": "resultado_exacto", "seleccion": "1-3", "cuota": None, "linea": None},
+            {"equipo_local": "Uzbekistan", "equipo_visitante": "Colombia",
+             "mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 1.5},
+        ],
+    }
+    assert _is_bet_builder(ocr) is True
+
+
+def test_is_bet_builder_false_when_per_leg_odds():
+    ocr = {"cuota_total": 4.45, "selecciones": [
+        {"equipo_local": "Uzbekistan", "mercado": "1X2", "seleccion": "home", "cuota": 1.9}]}
+    assert _is_bet_builder(ocr) is False
+
+
+def test_validate_bet_builder_allows_null_cuota():
+    ocr = {
+        "cuota_total": 4.45, "casa_apuestas": "Betano",
+        "selecciones": [
+            {"equipo_local": "Uzbekistan", "equipo_visitante": "Colombia",
+             "mercado": "resultado_exacto", "seleccion": "1-3", "cuota": None, "linea": None},
+            {"equipo_local": "Uzbekistan", "equipo_visitante": "Colombia",
+             "mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 1.5},
+        ],
+    }
+    parlay = validate(ocr, _TEAMS)
+    assert parlay.es_bet_builder is True
+    assert parlay.selecciones[0].cuota is None
+    assert parlay.selecciones[0].prob_implicita is None
+    assert parlay.selecciones[0].mercado_exotico is False  # resultado_exacto NO es exótico
+
+
+def test_validate_exact_score_out_of_range_rejected():
+    ocr = {"cuota_total": 2.0, "selecciones": [
+        {"equipo_local": "Uzbekistan", "equipo_visitante": "Colombia",
+         "mercado": "resultado_exacto", "seleccion": "11-0", "cuota": None, "linea": None}]}
+    with pytest.raises(validator.RangeError):
+        validate(ocr, _TEAMS)

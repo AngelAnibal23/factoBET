@@ -35,11 +35,12 @@ VALID_ODDS = {
     "over_under": (1.15,  6.0),
     "btts":       (1.25,  4.5),
     "handicap":   (1.10, 10.0),
+    "resultado_exacto": (1.5, 500.0),
     "exotic":     (1.05, 200.0),
 }
 DEFAULT_ODDS_RANGE = (1.05, 200.0)
 
-VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "exotic"}
+VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "exotic"}
 VALID_SEL_1X2   = {"home", "draw", "away"}
 VALID_SEL_OU    = {"over", "under"}
 VALID_SEL_BTTS  = {"yes", "no"}
@@ -84,13 +85,13 @@ class ValidatedSelection:
     equipo_visitante_raw:  Optional[str]
     mercado:               str
     seleccion:             str
-    cuota:                 float
+    cuota:                 Optional[float]   # None en bet builder
     linea:                 Optional[float]
     # Resolved team matches
     local_match:           TeamMatch
     visitante_match:       Optional[TeamMatch]
     # Derived
-    prob_implicita:        float   # 1 / cuota
+    prob_implicita:        Optional[float]   # None en bet builder
     mercado_exotico:       bool
 
 
@@ -101,6 +102,7 @@ class ValidatedParlay:
     casa_apuestas: Optional[str]
     # Flags
     needs_confirmation: list[str] = field(default_factory=list)  # human-readable list
+    es_bet_builder: bool = False
 
 
 # ── Supabase team loader ──────────────────────────────────────────────────────
@@ -155,7 +157,16 @@ def _best_match(raw: str, teams: list[dict]) -> TeamMatch:
 
 # ── Gate 1 — Syntactic ───────────────────────────────────────────────────────
 
-def _gate_syntactic(ocr: dict) -> None:
+def _is_bet_builder(ocr: dict) -> bool:
+    """Bet builder = sin cuotas por pata + cuota combinada presente."""
+    sels = ocr.get("selecciones") or []
+    if not sels:
+        return False
+    no_per_leg = all(s.get("cuota") is None for s in sels)
+    return no_per_leg and ocr.get("cuota_total") is not None
+
+
+def _gate_syntactic(ocr: dict, es_bb: bool = False) -> None:
     if "selecciones" not in ocr:
         raise SyntacticError(
             "VALIDATION_SYNTACTIC",
@@ -167,7 +178,7 @@ def _gate_syntactic(ocr: dict) -> None:
             "El campo 'selecciones' está vacío o no es una lista.",
         )
 
-    required = {"equipo_local", "mercado", "seleccion", "cuota"}
+    required = {"equipo_local", "mercado", "seleccion"} if es_bb else {"equipo_local", "mercado", "seleccion", "cuota"}
     for i, s in enumerate(ocr["selecciones"], 1):
         missing = required - s.keys()
         if missing:
@@ -175,12 +186,13 @@ def _gate_syntactic(ocr: dict) -> None:
                 "VALIDATION_SYNTACTIC",
                 f"Selección {i}: faltan campos obligatorios: {missing}",
             )
-        if not isinstance(s.get("cuota"), (int, float)) or s["cuota"] is None:
-            raise SyntacticError(
-                "VALIDATION_SYNTACTIC",
-                f"Selección {i}: 'cuota' debe ser un número.",
-                detail=f"Valor recibido: {s.get('cuota')!r}",
-            )
+        if not es_bb:
+            if not isinstance(s.get("cuota"), (int, float)) or s["cuota"] is None:
+                raise SyntacticError(
+                    "VALIDATION_SYNTACTIC",
+                    f"Selección {i}: 'cuota' debe ser un número.",
+                    detail=f"Valor recibido: {s.get('cuota')!r}",
+                )
         if s["mercado"] not in VALID_MARKETS:
             raise SyntacticError(
                 "VALIDATION_SYNTACTIC",
@@ -224,18 +236,18 @@ def _gate_semantic(ocr: dict, teams: list[dict]) -> list[dict]:
 
 # ── Gate 3 — Range ───────────────────────────────────────────────────────────
 
-def _gate_range(enriched: list[dict]) -> None:
+def _gate_range(enriched: list[dict], es_bb: bool = False) -> None:
     for i, s in enumerate(enriched, 1):
         mercado = s["mercado"]
-        cuota   = float(s["cuota"])
-        lo, hi  = VALID_ODDS.get(mercado, DEFAULT_ODDS_RANGE)
-
-        if not (lo <= cuota <= hi):
-            raise RangeError(
-                "VALIDATION_RANGE",
-                f"Selección {i}: cuota {cuota} fuera de rango para mercado '{mercado}'.",
-                detail=f"Rango válido: [{lo}, {hi}]. Posible error del OCR.",
-            )
+        if not es_bb:
+            cuota  = float(s["cuota"])
+            lo, hi = VALID_ODDS.get(mercado, DEFAULT_ODDS_RANGE)
+            if not (lo <= cuota <= hi):
+                raise RangeError(
+                    "VALIDATION_RANGE",
+                    f"Selección {i}: cuota {cuota} fuera de rango para mercado '{mercado}'.",
+                    detail=f"Rango válido: [{lo}, {hi}]. Posible error del OCR.",
+                )
 
         # Selección values — only validate non-exotic markets
         sel = s.get("seleccion", "")
@@ -263,6 +275,16 @@ def _gate_range(enriched: list[dict]) -> None:
                 f"Selección {i}: valor '{sel}' no válido para btts.",
                 detail=f"Válidos: {VALID_SEL_BTTS}",
             )
+        if mercado == "resultado_exacto":
+            from betbuilder import parse_exact_score
+            try:
+                parse_exact_score(sel)
+            except ValueError as e:
+                raise RangeError(
+                    "VALIDATION_RANGE",
+                    f"Selección {i}: resultado exacto inválido.",
+                    detail=str(e),
+                )
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -281,9 +303,10 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
     if teams is None:
         teams = _load_teams()
 
-    _gate_syntactic(ocr)
+    es_bb = _is_bet_builder(ocr)
+    _gate_syntactic(ocr, es_bb)
     enriched = _gate_semantic(ocr, teams)
-    _gate_range(enriched)
+    _gate_range(enriched, es_bb)
 
     # Build ValidatedParlay
     selections   = []
@@ -304,7 +327,8 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
                 f"({vis_m.score:.0%} similitud). ¿Es correcto?"
             )
 
-        cuota = float(s["cuota"])
+        cuota = float(s["cuota"]) if s.get("cuota") is not None else None
+        prob_impl = round(1 / cuota, 6) if cuota else None
         selections.append(ValidatedSelection(
             equipo_local_raw     = s.get("equipo_local", ""),
             equipo_visitante_raw = s.get("equipo_visitante") or "",
@@ -314,7 +338,7 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
             linea                = s.get("linea"),
             local_match          = local_m,
             visitante_match      = vis_m,
-            prob_implicita       = round(1 / cuota, 6),
+            prob_implicita       = prob_impl,
             mercado_exotico      = s["mercado"] == "exotic",
         ))
 
@@ -323,6 +347,7 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
         cuota_total         = ocr.get("cuota_total"),
         casa_apuestas       = ocr.get("casa_apuestas"),
         needs_confirmation  = needs_confirm,
+        es_bet_builder      = es_bb,
     )
 
 
