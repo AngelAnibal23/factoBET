@@ -691,6 +691,43 @@ def _analyze_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> ParlayAnaly
     )
 
 
+def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float) -> ParlayAnalysis:
+    """Obtiene (lh,la,rho) del engine que toque y delega en betbuilder."""
+    from betbuilder import analyze_bet_builder, BetBuilderSinCuotaError
+    if not parlay.cuota_total:
+        raise BetBuilderSinCuotaError("Bet builder sin cuota_total: no se puede formar el veredicto.")
+
+    match_sel = next((s for s in parlay.selecciones if s.visitante_match), None)
+
+    if liga == "internacional":
+        model = _load_intl_predictor()
+        rho, version = model.rho, "intl_v0.1"
+        if match_sel:
+            home = match_sel.local_match.canonical
+            away = match_sel.visitante_match.canonical
+            if home in model.idx and away in model.idx:
+                neutral = home not in HOSTS_2026
+                lh, la = model.lambdas(home, away, neutral)
+            else:
+                lh, la = None, None
+        else:
+            lh, la = None, None
+    else:
+        model, _, _ = _load_and_fit()
+        rho, version = model.rho, "v0.2"
+        if match_sel:
+            hid = match_sel.local_match.equipo_id
+            aid = match_sel.visitante_match.equipo_id
+            if hid in model.idx and aid in model.idx:
+                lh, la = model.lambdas(hid, aid)
+            else:
+                lh, la = None, None
+        else:
+            lh, la = None, None
+
+    return analyze_bet_builder(parlay, lh, la, rho, version, margin)
+
+
 def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
     """
     Full statistical analysis of a validated parlay.
@@ -707,14 +744,17 @@ def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
             "Parlay mixto: combina equipos de Liga 1 Peruana y selecciones "
             "internacionales. No es analizable como un solo parlay; sube boletos separados."
         )
+
+    casa = (parlay.casa_apuestas or "").lower().strip()
+    margin = BOOKMAKER_MARGINS.get(casa, DEFAULT_MARGIN)
+
+    if parlay.es_bet_builder:
+        return _analyze_bet_builder_route(parlay, liga, margin)
+
     if liga == "internacional":
         return _analyze_intl(parlay, _load_intl_predictor())
 
     model, _, team_match_count = _load_and_fit()
-
-    # Determine bookmaker margin
-    casa = (parlay.casa_apuestas or "").lower().strip()
-    margin = BOOKMAKER_MARGINS.get(casa, DEFAULT_MARGIN)
 
     # Analyze each selection
     analyses: list[SelectionAnalysis] = []

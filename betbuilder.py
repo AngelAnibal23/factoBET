@@ -123,3 +123,76 @@ def bb_confidence(veredicto: str, n_modelables: int, n_exoticas: int):
     if n_exoticas <= 2:
         return "MEDIA", [f"{n_exoticas} pata(s) no modelable(s): el techo es una cota superior; el resultado depende de ellas."]
     return "BAJA", [f"{n_exoticas} de {total} patas no modelables: el techo es muy flojo."]
+
+
+class BetBuilderSinCuotaError(ValueError):
+    """Bet builder sin cuota_total: no se puede formar el veredicto."""
+
+
+def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float):
+    """Ensambla el análisis de un bet builder en un ParlayAnalysis.
+
+    lh/la/rho: del partido (lh None si los equipos no están en el modelo).
+    Import local de analyzer para evitar ciclo de import a nivel de módulo.
+    """
+    from analyzer import SelectionAnalysis, ParlayAnalysis
+
+    if not parlay.cuota_total:
+        raise BetBuilderSinCuotaError("Bet builder sin cuota_total: no se puede formar el veredicto.")
+
+    covered = lh is not None
+    matrix = scoreline_matrix(lh, la, rho) if covered else None
+
+    analyses = []
+    goal_legs = []
+    exoticas_desc = []
+    for sel in parlay.selecciones:
+        is_goal = sel.mercado in GOAL_MARKETS
+        modelable = covered and is_goal
+        if modelable:
+            leg = (sel.mercado, sel.seleccion, sel.linea)
+            prob_mod = round(marginal_prob(matrix, leg), 6)
+            goal_legs.append(leg)
+            nivel_cov, alertas = "ALTA", []
+        elif not is_goal:
+            prob_mod = None
+            exoticas_desc.append(sel.seleccion)
+            nivel_cov, alertas = "NULA", ["Mercado exótico: el modelo no puede validar esta selección."]
+        else:  # goles pero sin cobertura de equipos
+            prob_mod = None
+            nivel_cov, alertas = "BAJA", ["Equipos sin datos en el modelo: no se puede calcular probabilidad."]
+
+        analyses.append(SelectionAnalysis(
+            equipo_local=sel.local_match.canonical,
+            equipo_visitante=sel.visitante_match.canonical if sel.visitante_match else None,
+            equipo_local_id=sel.local_match.equipo_id,
+            equipo_visitante_id=sel.visitante_match.equipo_id if sel.visitante_match else None,
+            mercado=sel.mercado, seleccion=sel.seleccion,
+            cuota=None, linea=sel.linea,
+            prob_implicita=None, prob_implicita_adj=None,
+            prob_modelo=prob_mod,
+            lambda_home=round(lh, 4) if covered else None,
+            lambda_away=round(la, 4) if covered else None,
+            edge=None, kelly_fraccion=None,
+            nivel_cobertura=nivel_cov, mercado_exotico=sel.mercado_exotico,
+            n_partidos_local=0, n_partidos_visitante=0, alertas=alertas,
+        ))
+
+    n_modelables = len(goal_legs)
+    n_exoticas = len(parlay.selecciones) - n_modelables
+    ceiling = joint_ceiling(matrix, goal_legs) if (covered and n_modelables > 0) else None
+
+    vered, kelly = verdict(ceiling, parlay.cuota_total, n_modelables, n_exoticas)
+    nivel_conf, razones = bb_confidence(vered, n_modelables, n_exoticas)
+    p_impl = round(1.0 / parlay.cuota_total, 6)
+
+    return ParlayAnalysis(
+        selecciones=analyses, prob_parlay_modelo=None, prob_parlay_impl=None,
+        cuota_total=parlay.cuota_total, casa_apuestas=parlay.casa_apuestas,
+        nivel_confianza=nivel_conf, razones_confianza=razones, correlaciones=[],
+        version_modelo=version_modelo, margen_aplicado=margin,
+        es_bet_builder=True, veredicto=vered,
+        prob_techo=round(ceiling, 6) if ceiling is not None else None,
+        prob_impl_combinada=p_impl, n_modelables=n_modelables, n_exoticas=n_exoticas,
+        bet_builder_kelly=kelly, exoticas_desc=exoticas_desc,
+    )
