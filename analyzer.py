@@ -79,10 +79,10 @@ class SelectionAnalysis:
     equipo_visitante_id:   Optional[str]
     mercado:               str
     seleccion:             str
-    cuota:                 float
+    cuota:                 Optional[float]   # None en bet builder (cuota combinada)
     linea:                 Optional[float]
-    prob_implicita:        float
-    prob_implicita_adj:    float
+    prob_implicita:        Optional[float]   # None en bet builder
+    prob_implicita_adj:    Optional[float]
     prob_modelo:           Optional[float]   # None for exotic/uncovered
     lambda_home:           Optional[float]
     lambda_away:           Optional[float]
@@ -115,6 +115,15 @@ class ParlayAnalysis:
     correlaciones:        list[Correlacion]
     version_modelo:       str = "v0.2"
     margen_aplicado:      float = DEFAULT_MARGIN
+    # Bet builder (Fase 1) — None/0 para acumuladores
+    es_bet_builder:       bool = False
+    veredicto:            Optional[str] = None    # SIN_VALOR|NO_CONCLUYENTE|VALOR|NO_EVALUABLE
+    prob_techo:           Optional[float] = None
+    prob_impl_combinada:  Optional[float] = None
+    n_modelables:         int = 0
+    n_exoticas:           int = 0
+    bet_builder_kelly:    Optional[float] = None
+    exoticas_desc:        list[str] = field(default_factory=list)
 
 
 # ── Dixon-Coles v0.2 (same as engine_v02.py) ─────────────────────────────────
