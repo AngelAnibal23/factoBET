@@ -73,6 +73,9 @@ def save_analysis(
         "casa_apuestas":           result.casa_apuestas,
         "imagen_hash":             image_hash,
         "resultado_parlay":        "PENDIENTE",
+        "es_bet_builder":          getattr(result, "es_bet_builder", False),
+        "prob_techo":              getattr(result, "prob_techo", None),
+        "veredicto":               getattr(result, "veredicto", None),
     }
 
     resp = sb.table("analisis_parlays").insert(parlay_row).execute()
