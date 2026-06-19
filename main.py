@@ -30,6 +30,7 @@ from contextlib import asynccontextmanager
 from ocr import extract_parlay, OcrExtractionError, OcrParseError
 from validator import validate, _load_teams, ValidationError, SyntacticError, SemanticError, RangeError
 from analyzer import analyze, warm_up, ParlayAnalysis
+from betbuilder import BetBuilderSinCuotaError
 from storage import save_analysis
 from narrator import generate_narrative
 from resolver import resolver_resultados
@@ -103,6 +104,20 @@ def _err(code: str, message: str, detail: str = "", duracion_ms: int = 0) -> dic
 
 # ── Serializers ───────────────────────────────────────────────────────────────
 
+def _bet_builder_block(result: ParlayAnalysis) -> dict | None:
+    if not getattr(result, "es_bet_builder", False):
+        return None
+    return {
+        "veredicto":            result.veredicto,
+        "prob_techo":           result.prob_techo,
+        "prob_impl_combinada":  result.prob_impl_combinada,
+        "n_modelables":         result.n_modelables,
+        "n_exoticas":           result.n_exoticas,
+        "exoticas":             result.exoticas_desc,
+        "kelly_fraccion":       result.bet_builder_kelly,
+    }
+
+
 def _serialize_analysis(result: ParlayAnalysis, needs_confirmation: list[str], narrativa: str | None = None) -> dict:
     selecciones = []
     for s in result.selecciones:
@@ -156,6 +171,7 @@ def _serialize_analysis(result: ParlayAnalysis, needs_confirmation: list[str], n
         "correlaciones":       correlaciones,
         "confirmacion_requerida": needs_confirmation,
         "narrativa":           narrativa,
+        "bet_builder":         _bet_builder_block(result),
         "disclaimer": (
             "Este analisis es estadistico, no predictivo. El futbol tiene alta varianza "
             "irreducible. El valor estadistico solo se realiza en el largo plazo con "
@@ -239,6 +255,14 @@ async def analizar_parlay(
     # 4. Statistical analysis
     try:
         result = analyze(parlay)
+    except BetBuilderSinCuotaError as e:
+        ms = int((time.monotonic() - t0) * 1000)
+        return JSONResponse(
+            status_code=422,
+            content=_err("BET_BUILDER_SIN_CUOTA",
+                         "El bet builder no trae cuota combinada; no se puede emitir veredicto.",
+                         str(e), ms),
+        )
     except ValueError as e:
         # Parlay mixto (Liga 1 + Internacional): no analizable como un solo boleto.
         ms = int((time.monotonic() - t0) * 1000)
