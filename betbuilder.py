@@ -81,3 +81,45 @@ def joint_ceiling(matrix: np.ndarray, legs: list[tuple]) -> float:
     for leg in legs:
         mask &= goal_leg_mask(*leg)
     return float(matrix[mask].sum())
+
+
+def _fractional_kelly(prob: float, cuota: float):
+    b = cuota - 1.0
+    q = 1.0 - prob
+    full = (b * prob - q) / b
+    if full <= 0:
+        return None
+    return round(full * KELLY_FRACTION, 4)
+
+
+def verdict(ceiling, cuota_total, n_modelables: int, n_exoticas: int):
+    """Devuelve (veredicto, kelly_fraccion).
+
+    SIN_VALOR     : ceiling <= 1/cuota -> EV<=0 garantizado (prob_real <= ceiling).
+    NO_CONCLUYENTE: ceiling > 1/cuota con patas exóticas (techo = cota superior).
+    VALOR         : ceiling > 1/cuota sin exóticas (ceiling = prob real) + Kelly.
+    NO_EVALUABLE  : ninguna pata modelable.
+    """
+    if n_modelables == 0:
+        return "NO_EVALUABLE", None
+    p = 1.0 / cuota_total
+    if ceiling <= p:
+        return "SIN_VALOR", None
+    if n_exoticas == 0:
+        return "VALOR", _fractional_kelly(ceiling, cuota_total)
+    return "NO_CONCLUYENTE", None
+
+
+def bb_confidence(veredicto: str, n_modelables: int, n_exoticas: int):
+    """Confianza = cuánto confiar en el VEREDICTO."""
+    if veredicto == "SIN_VALOR":
+        return "ALTA", ["Sin valor garantizado: incluso el mejor caso (techo) no supera la cuota."]
+    if veredicto == "VALOR":
+        return "ALTA", ["Todas las patas modelables: el techo es la probabilidad real."]
+    if veredicto == "NO_EVALUABLE":
+        return "BAJA", ["Ninguna pata es modelable: no se puede formar un techo."]
+    # NO_CONCLUYENTE
+    total = n_modelables + n_exoticas
+    if n_exoticas <= 2:
+        return "MEDIA", [f"{n_exoticas} pata(s) no modelable(s): el techo es una cota superior; el resultado depende de ellas."]
+    return "BAJA", [f"{n_exoticas} de {total} patas no modelables: el techo es muy flojo."]

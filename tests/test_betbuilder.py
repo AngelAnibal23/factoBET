@@ -72,3 +72,36 @@ def test_joint_of_identical_legs_equals_marginal():
     M = betbuilder.scoreline_matrix(1.3, 1.3, -0.05)
     leg = ("over_under", "over", 1.5)
     assert abs(betbuilder.joint_ceiling(M, [leg, leg]) - betbuilder.marginal_prob(M, leg)) < 1e-12
+
+
+def test_verdict_sin_valor():
+    # techo <= 1/cuota -> SIN_VALOR
+    v, kelly = betbuilder.verdict(ceiling=0.20, cuota_total=4.0, n_modelables=2, n_exoticas=1)
+    assert v == "SIN_VALOR" and kelly is None
+
+
+def test_verdict_no_concluyente():
+    # techo > 1/cuota con exóticas -> NO_CONCLUYENTE
+    v, kelly = betbuilder.verdict(ceiling=0.40, cuota_total=4.0, n_modelables=2, n_exoticas=3)
+    assert v == "NO_CONCLUYENTE" and kelly is None
+
+
+def test_verdict_valor_with_kelly():
+    # techo > 1/cuota sin exóticas -> VALOR + Kelly fraccionario
+    v, kelly = betbuilder.verdict(ceiling=0.40, cuota_total=4.0, n_modelables=2, n_exoticas=0)
+    assert v == "VALOR" and kelly is not None and kelly > 0
+
+
+def test_verdict_no_evaluable():
+    v, kelly = betbuilder.verdict(ceiling=None, cuota_total=4.0, n_modelables=0, n_exoticas=3)
+    assert v == "NO_EVALUABLE" and kelly is None
+
+
+def test_confidence_sin_valor_is_alta():
+    nivel, _ = betbuilder.bb_confidence("SIN_VALOR", n_modelables=2, n_exoticas=2)
+    assert nivel == "ALTA"
+
+
+def test_confidence_no_concluyente_many_exoticas_is_baja():
+    nivel, _ = betbuilder.bb_confidence("NO_CONCLUYENTE", n_modelables=1, n_exoticas=4)
+    assert nivel == "BAJA"
