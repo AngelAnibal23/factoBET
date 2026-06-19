@@ -45,3 +45,39 @@ def parse_exact_score(seleccion) -> tuple[int, int]:
     if not (0 <= a <= MAX_GOALS and 0 <= b <= MAX_GOALS):
         raise ValueError(f"Resultado exacto fuera de rango [0,{MAX_GOALS}]: {seleccion!r}")
     return a, b
+
+
+def goal_leg_mask(mercado: str, seleccion: str, linea) -> np.ndarray:
+    """Máscara booleana 11x11 de las celdas (i,j) donde esta pata es VERDADERA."""
+    I, J = np.indices((MAX_GOALS + 1, MAX_GOALS + 1))
+    if mercado == "1X2":
+        if seleccion == "home": return I > J
+        if seleccion == "draw": return I == J
+        if seleccion == "away": return I < J
+    elif mercado == "over_under":
+        total = I + J
+        if seleccion == "over":  return total > linea
+        if seleccion == "under": return total < linea
+    elif mercado == "btts":
+        yes = (I > 0) & (J > 0)
+        return yes if seleccion == "yes" else ~yes
+    elif mercado == "handicap":
+        win_home = (I + linea - J) > 0
+        return win_home if seleccion == "home" else ~win_home
+    elif mercado == "resultado_exacto":
+        a, b = parse_exact_score(seleccion)
+        return (I == a) & (J == b)
+    raise ValueError(f"Pata no modelable en familia goles: {mercado}/{seleccion}")
+
+
+def marginal_prob(matrix: np.ndarray, leg: tuple) -> float:
+    """Probabilidad marginal de una sola pata (contexto informativo)."""
+    return float(matrix[goal_leg_mask(*leg)].sum())
+
+
+def joint_ceiling(matrix: np.ndarray, legs: list[tuple]) -> float:
+    """Conjunta de varias patas del mismo partido = techo de la prob real."""
+    mask = np.ones(matrix.shape, dtype=bool)
+    for leg in legs:
+        mask &= goal_leg_mask(*leg)
+    return float(matrix[mask].sum())
