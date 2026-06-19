@@ -3,6 +3,7 @@ import { ApiError } from './api.js'
 import UploadZone from './components/UploadZone.jsx'
 import Spinner from './components/Spinner.jsx'
 import Ticket from './components/Ticket.jsx'
+import BetBuilderVerdict from './components/BetBuilderVerdict.jsx'
 import SelectionCard from './components/SelectionCard.jsx'
 import CorrelationAlert from './components/CorrelationAlert.jsx'
 import Disclaimer from './components/Disclaimer.jsx'
@@ -104,6 +105,8 @@ export default function App() {
       {state === 'result' && result && (
         <div className="results-wrap">
           <Ticket resumen={result.resumen} meta={meta} />
+
+          {result.bet_builder && <BetBuilderVerdict data={result.bet_builder} />}
 
           {result.resumen.tiene_correlaciones && (
             <CorrelationAlert correlaciones={result.correlaciones} />
