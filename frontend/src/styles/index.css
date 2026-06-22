@@ -888,3 +888,128 @@ body {
   color: var(--sub);
   line-height: 1.5;
 }
+
+/* ── Marcador más probable ─────────────────────────────────────────────── */
+.marcador {
+  display: flex;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 14px;
+}
+.marcador-bar { width: 4px; flex-shrink: 0; background: var(--green); }
+.marcador-body { flex: 1; padding: 18px; }
+.marcador-teams {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.marcador-team {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+.marcador-teams .marcador-team:first-child { text-align: right; }
+.marcador-teams .marcador-team:last-child  { text-align: left; }
+.marcador-score {
+  font-family: var(--brand);
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: var(--green);
+  line-height: 1;
+  white-space: nowrap;
+}
+.marcador-dash { margin: 0 8px; color: var(--sub); }
+.marcador-prob {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--sub);
+}
+.marcador-prob b { color: var(--text); font-size: 15px; }
+.marcador-toggle {
+  display: block;
+  margin: 14px auto 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: var(--green);
+}
+.marcador-toggle:hover { text-decoration: underline; }
+
+.marcador-detalle {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.marcador-detalle-label {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--sub);
+  margin-bottom: 10px;
+}
+.marcador-detalle-label:not(:first-child) { margin-top: 18px; }
+.marcador-top { display: flex; flex-direction: column; gap: 7px; }
+.marcador-top-row { display: flex; align-items: center; gap: 10px; }
+.marcador-top-score {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  width: 38px;
+  flex-shrink: 0;
+}
+.marcador-top-track {
+  flex: 1;
+  height: 8px;
+  background: var(--card-deep);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.marcador-top-fill { display: block; height: 100%; background: var(--green); border-radius: 999px; }
+.marcador-top-pct {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--sub);
+  width: 48px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.marcador-1x2-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--card-deep);
+}
+.marcador-1x2-bar .seg { display: block; height: 100%; }
+.seg-local { background: var(--green); }
+.seg-draw  { background: var(--sub); }
+.seg-away  { background: var(--yellow); }
+.marcador-1x2-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.marcador-1x2-legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+.dot-local { background: var(--green); }
+.dot-draw  { background: var(--sub); }
+.dot-away  { background: var(--yellow); }
