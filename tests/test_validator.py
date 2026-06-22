@@ -96,3 +96,36 @@ def test_validate_exact_score_out_of_range_rejected():
          "mercado": "resultado_exacto", "seleccion": "11-0", "cuota": None, "linea": None}]}
     with pytest.raises(validator.RangeError):
         validate(ocr, _TEAMS)
+
+
+def test_bet_builder_backfill_empty_team_from_consensus():
+    # El OCR dejó vacío el equipo en la 2ª pata; al ser bet builder (un solo
+    # partido) se rellena con el consenso de las demás y NO debe fallar.
+    ocr = {
+        "cuota_total": 4.45, "casa_apuestas": "Betano",
+        "selecciones": [
+            {"equipo_local": "Uzbekistan", "equipo_visitante": "Colombia",
+             "mercado": "resultado_exacto", "seleccion": "1-3", "cuota": None, "linea": None},
+            {"equipo_local": "", "equipo_visitante": "",
+             "mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 1.5},
+        ],
+    }
+    parlay = validate(ocr, _TEAMS)
+    assert parlay.es_bet_builder is True
+    assert parlay.selecciones[1].equipo_local_raw == "Uzbekistan"
+    assert parlay.selecciones[1].equipo_visitante_raw == "Colombia"
+    assert parlay.selecciones[1].local_match.canonical == "Uzbekistan"
+
+
+def test_bet_builder_backfill_handles_missing_team_key():
+    # Caso más duro: el OCR OMITE la clave equipo_local en una pata.
+    ocr = {
+        "cuota_total": 4.45, "casa_apuestas": "Betano",
+        "selecciones": [
+            {"equipo_local": "Uzbekistan", "equipo_visitante": "Colombia",
+             "mercado": "resultado_exacto", "seleccion": "1-3", "cuota": None, "linea": None},
+            {"mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 1.5},
+        ],
+    }
+    parlay = validate(ocr, _TEAMS)
+    assert parlay.selecciones[1].equipo_local_raw == "Uzbekistan"

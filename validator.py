@@ -16,6 +16,7 @@ Match confidence:
 """
 
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -166,6 +167,30 @@ def _is_bet_builder(ocr: dict) -> bool:
     return no_per_leg and ocr.get("cuota_total") is not None
 
 
+def _backfill_bet_builder_teams(ocr: dict) -> None:
+    """Un bet builder es un solo partido (asunción v1): todas las patas comparten
+    local/visitante. El OCR a veces deja vacío el equipo en algunas patas; aquí lo
+    rellenamos con el consenso (valor más frecuente) de las que sí lo traen, para no
+    depender de que el OCR repita el nombre en cada pata. Muta `ocr` in-place."""
+    sels = ocr.get("selecciones") or []
+
+    def _consensus(field: str) -> Optional[str]:
+        valores = [(s.get(field) or "").strip() for s in sels]
+        valores = [v for v in valores if v]
+        if not valores:
+            return None
+        return Counter(valores).most_common(1)[0][0]
+
+    local_consenso = _consensus("equipo_local")
+    vis_consenso   = _consensus("equipo_visitante")
+
+    for s in sels:
+        if not (s.get("equipo_local") or "").strip() and local_consenso:
+            s["equipo_local"] = local_consenso
+        if not (s.get("equipo_visitante") or "").strip() and vis_consenso:
+            s["equipo_visitante"] = vis_consenso
+
+
 def _gate_syntactic(ocr: dict, es_bb: bool = False) -> None:
     if "selecciones" not in ocr:
         raise SyntacticError(
@@ -304,6 +329,8 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
         teams = _load_teams()
 
     es_bb = _is_bet_builder(ocr)
+    if es_bb:
+        _backfill_bet_builder_teams(ocr)
     _gate_syntactic(ocr, es_bb)
     enriched = _gate_semantic(ocr, teams)
     _gate_range(enriched, es_bb)

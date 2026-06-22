@@ -58,7 +58,7 @@ export default function SelectionCard({ sel, index }) {
           <div className="sel-badges">
             <span className="badge-mkt">{mercadoLabel}{lineaStr}</span>
             <span className="badge-sel">{selLabel}</span>
-            <span className="badge-odds">{sel.cuota.toFixed(2)}</span>
+            {sel.cuota != null && <span className="badge-odds">{sel.cuota.toFixed(2)}</span>}
             <span className={`badge-cob ${cobClass}`}>{sel.nivel_cobertura}</span>
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function SelectionCard({ sel, index }) {
         <div className="sel-stats">
           <div className="sel-stat-cell">
             <div className="ss-label">Cuota</div>
-            <div className="ss-value">{sel.cuota.toFixed(2)}</div>
+            <div className="ss-value">{sel.cuota != null ? sel.cuota.toFixed(2) : '—'}</div>
           </div>
           <div className="sel-stat-cell">
             <div className="ss-label">Kelly 20%</div>
