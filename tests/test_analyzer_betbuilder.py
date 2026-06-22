@@ -73,6 +73,48 @@ def test_analyze_bet_builder_no_concluyente():
     assert res.exoticas_desc == ["Más 7.5 córners"]
 
 
+def test_analyze_bet_builder_intl_pobla_marcador():
+    # Bet builder de selecciones (estilo ejemploBET3: Argentina vs Austria).
+    parlay = ValidatedParlay(
+        selecciones=[
+            _bb_sel("Colombia", "C1", "Uzbekistan", "U1", "1X2", "home"),
+            _bb_sel("Colombia", "C1", "Uzbekistan", "U1", "over_under", "over", 1.5),
+        ],
+        cuota_total=2.5, casa_apuestas="Betano", es_bet_builder=True,
+    )
+    m = _intl_model()
+    lh, la = m.lambdas("Colombia", "Uzbekistan", neutral=True)
+    res = betbuilder.analyze_bet_builder(parlay, lh, la, m.rho, "intl_v0.1", 0.06)
+    assert len(res.marcadores_partido) == 1
+    mar = res.marcadores_partido[0]
+    assert mar["equipo_local"] == "Colombia"
+    assert mar["equipo_visitante"] == "Uzbekistan"
+    assert 0.0 < mar["probabilidad"] < 1.0
+    assert len(mar["detalle"]["top"]) == 5
+
+
+def test_analyze_bet_builder_liga1_sin_marcador():
+    # Liga 1 (v0.2): alcance es solo selecciones por ahora -> sin marcador.
+    parlay = ValidatedParlay(
+        selecciones=[_bb_sel("Colombia", "C1", "Uzbekistan", "U1", "1X2", "home")],
+        cuota_total=2.0, casa_apuestas="Betano", es_bet_builder=True,
+    )
+    m = _intl_model()
+    lh, la = m.lambdas("Colombia", "Uzbekistan", neutral=True)
+    res = betbuilder.analyze_bet_builder(parlay, lh, la, m.rho, "v0.2", 0.07)
+    assert res.marcadores_partido == []
+
+
+def test_analyze_bet_builder_sin_cobertura_sin_marcador():
+    # Equipos fuera de los params (lh None) -> sin matriz -> sin marcador.
+    parlay = ValidatedParlay(
+        selecciones=[_bb_sel("Colombia", "C1", "Uzbekistan", "U1", "exotic", "corners")],
+        cuota_total=2.0, casa_apuestas="Betano", es_bet_builder=True,
+    )
+    res = betbuilder.analyze_bet_builder(parlay, None, None, -0.05, "intl_v0.1", 0.06)
+    assert res.marcadores_partido == []
+
+
 def test_analyze_bet_builder_sin_cuota_raises():
     parlay = ValidatedParlay(
         selecciones=[_bb_sel("Uzbekistan", "U1", "Colombia", "C1", "over_under", "over", 1.5)],

@@ -186,6 +186,19 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float)
     nivel_conf, razones = bb_confidence(vered, n_modelables, n_exoticas)
     p_impl = round(1.0 / parlay.cuota_total, 6)
 
+    # Marcador más probable del partido (solo selecciones por ahora). La matriz ya
+    # está calculada; el bet builder es un único partido entre dos selecciones.
+    marcadores = []
+    if covered and version_modelo == "intl_v0.1":
+        from marcador import marcador_partido
+        match_sel = next((s for s in parlay.selecciones if s.visitante_match), None)
+        if match_sel:
+            marcadores = [marcador_partido(
+                lh, la, rho,
+                match_sel.local_match.canonical,
+                match_sel.visitante_match.canonical,
+            )]
+
     return ParlayAnalysis(
         selecciones=analyses, prob_parlay_modelo=None, prob_parlay_impl=None,
         cuota_total=parlay.cuota_total, casa_apuestas=parlay.casa_apuestas,
@@ -195,4 +208,5 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float)
         prob_techo=round(ceiling, 6) if ceiling is not None else None,
         prob_impl_combinada=p_impl, n_modelables=n_modelables, n_exoticas=n_exoticas,
         bet_builder_kelly=kelly, exoticas_desc=exoticas_desc,
+        marcadores_partido=marcadores,
     )
