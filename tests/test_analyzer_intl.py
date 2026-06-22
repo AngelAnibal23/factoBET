@@ -127,6 +127,40 @@ def test_coverage_intl_falta_un_equipo():
     assert nivel == "BAJA"
 
 
+# ── Marcador más probable (solo selecciones) ──────────────────────────────────
+
+def test_analyze_intl_pobla_marcador():
+    model = _intl_model()
+    p = _parlay(_sel("France", "I1", "1X2", "home", 2.0, "Brazil", "I2"))
+    res = _analyze_intl(p, model)
+    assert len(res.marcadores_partido) == 1
+    m = res.marcadores_partido[0]
+    assert m["equipo_local"] == "France"
+    assert m["equipo_visitante"] == "Brazil"
+    assert "-" in m["marcador"]
+    assert 0.0 < m["probabilidad"] < 1.0
+    assert len(m["detalle"]["top"]) == 5
+
+
+def test_analyze_intl_sin_cobertura_no_marcador():
+    model = _intl_model()
+    # "Narnia" no está en los params congelados -> no se puede formar la matriz.
+    p = _parlay(_sel("Narnia", "IX", "1X2", "home", 2.0, "Brazil", "I2"))
+    res = _analyze_intl(p, model)
+    assert res.marcadores_partido == []
+
+
+def test_analyze_intl_marcador_dedupe_por_partido():
+    model = _intl_model()
+    # Dos patas del MISMO partido -> un solo marcador.
+    p = _parlay(
+        _sel("France", "I1", "1X2", "home", 2.0, "Brazil", "I2"),
+        _sel("France", "I1", "over_under", "over", 1.9, "Brazil", "I2", linea=2.5),
+    )
+    res = _analyze_intl(p, model)
+    assert len(res.marcadores_partido) == 1
+
+
 # ── Rechazo de parlay mixto en el dispatch ─────────────────────────────────────
 
 def test_dispatch_mixto_lanza_error(monkeypatch):

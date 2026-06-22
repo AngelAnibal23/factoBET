@@ -172,6 +172,7 @@ def _serialize_analysis(result: ParlayAnalysis, needs_confirmation: list[str], n
         "confirmacion_requerida": needs_confirmation,
         "narrativa":           narrativa,
         "bet_builder":         _bet_builder_block(result),
+        "marcadores_partido":  list(getattr(result, "marcadores_partido", [])),
         "disclaimer": (
             "Este analisis es estadistico, no predictivo. El futbol tiene alta varianza "
             "irreducible. El valor estadistico solo se realiza en el largo plazo con "

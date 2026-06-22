@@ -124,6 +124,8 @@ class ParlayAnalysis:
     n_exoticas:           int = 0
     bet_builder_kelly:    Optional[float] = None
     exoticas_desc:        list[str] = field(default_factory=list)
+    # Marcador más probable por partido (solo selecciones por ahora; ver marcador.py)
+    marcadores_partido:   list[dict] = field(default_factory=list)
 
 
 # ── Dixon-Coles v0.2 (same as engine_v02.py) ─────────────────────────────────
@@ -676,6 +678,7 @@ def _analyze_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> ParlayAnaly
 
     correlaciones = _detect_correlations(parlay.selecciones)
     nivel_conf, razones_conf = _confidence(analyses, correlaciones)
+    marcadores = _marcadores_intl(parlay, model)
 
     return ParlayAnalysis(
         selecciones         = analyses,
@@ -688,7 +691,33 @@ def _analyze_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> ParlayAnaly
         correlaciones       = correlaciones,
         version_modelo      = "intl_v0.1",
         margen_aplicado     = margin,
+        marcadores_partido  = marcadores,
     )
+
+
+def _marcadores_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> list[dict]:
+    """Marcador más probable de cada partido distinto cubierto por el modelo.
+
+    Un boleto del Mundial suele ser un solo partido -> lista de uno. Soporta
+    acumuladores (un marcador por partido). Dedupe por (local, visitante); omite
+    partidos sin visitante o con alguna selección fuera de los params congelados.
+    """
+    from marcador import marcador_partido
+
+    marcadores: list[dict] = []
+    vistos: set[tuple[str, str]] = set()
+    for sel in parlay.selecciones:
+        home = sel.local_match.canonical
+        away = sel.visitante_match.canonical if sel.visitante_match else None
+        if not away or (home, away) in vistos:
+            continue
+        if home not in model.idx or away not in model.idx:
+            continue
+        vistos.add((home, away))
+        neutral = home not in HOSTS_2026
+        lh, la = model.lambdas(home, away, neutral)
+        marcadores.append(marcador_partido(lh, la, model.rho, home, away))
+    return marcadores
 
 
 def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float) -> ParlayAnalysis:
