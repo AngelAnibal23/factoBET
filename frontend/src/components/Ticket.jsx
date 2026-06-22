@@ -11,7 +11,13 @@ function barGradient(nivel) {
 const CONF_COLOR = { ALTA: 'var(--green)', MEDIA: 'var(--yellow)', BAJA: 'var(--red)' }
 const CONF_BG    = { ALTA: 'var(--green-lo)', MEDIA: 'var(--yellow-lo)', BAJA: 'var(--red-lo)' }
 
-export default function Ticket({ resumen }) {
+// Etiqueta del modelo según la versión real del parlay (meta.version_modelo).
+const MODEL_LABEL = {
+  'intl_v0.1': 'Dixon-Coles intl v0.1 · Selecciones',
+  'v0.2':      'Dixon-Coles v0.2 · Liga 1 Perú',
+}
+
+export default function Ticket({ resumen, meta }) {
   const {
     prob_parlay_modelo,
     prob_parlay_impl,
@@ -70,8 +76,13 @@ export default function Ticket({ resumen }) {
       </div>
 
       <div className="ticket-footer">
-        <span>Dixon-Coles v0.2 · 996 partidos · 2022–2024</span>
-        <span>Margen {(margen_aplicado * 100).toFixed(1)}% aplicado</span>
+        <span>
+          {MODEL_LABEL[meta?.version_modelo]
+            ?? `Dixon-Coles ${meta?.version_modelo ?? ''}`.trim()}
+        </span>
+        {margen_aplicado != null && (
+          <span>Margen {(margen_aplicado * 100).toFixed(1)}% aplicado</span>
+        )}
       </div>
     </div>
   )
