@@ -26,6 +26,7 @@ Errores lanzados:
 import os
 import json
 import re
+import time
 import base64
 from pathlib import Path
 
@@ -34,6 +35,52 @@ from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── Retry / backoff ───────────────────────────────────────────────────────────
+# Gemini falla de forma transitoria por sobrecarga (503/UNAVAILABLE) y por cuota
+# del free tier (429/RESOURCE_EXHAUSTED, que trae un hint retryDelay). Reintentar
+# con backoff exponencial, respetando el retryDelay de la API cuando viene.
+
+RETRY_MAX_ATTEMPTS = 4
+RETRY_BASE_DELAY   = 2.0    # segundos
+RETRY_DELAY_CAP    = 30.0   # tope por intento
+
+_RETRYABLE_MARKERS = ("503", "429", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "OVERLOADED")
+
+
+def _is_retryable(err: Exception) -> bool:
+    """True si el error de Gemini es transitorio (sobrecarga o cuota por minuto)."""
+    s = str(err).upper()
+    return any(m in s for m in _RETRYABLE_MARKERS)
+
+
+def _parse_retry_delay(text: str) -> float | None:
+    """Extrae el hint 'retryDelay: 26s' del cuerpo del error 429, si existe."""
+    m = re.search(r"retryDelay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)\s*s", text, re.IGNORECASE)
+    return float(m.group(1)) if m else None
+
+
+def _retry_delay(err: Exception, attempt: int) -> float:
+    """Segundos a esperar: respeta el hint de la API; si no, backoff exponencial."""
+    hint = _parse_retry_delay(str(err))
+    if hint is not None:
+        return min(hint, RETRY_DELAY_CAP)
+    return min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_DELAY_CAP)
+
+
+def _generate_with_retry(call, *, max_attempts: int = RETRY_MAX_ATTEMPTS, sleep=time.sleep):
+    """Ejecuta `call()` reintentando solo errores transitorios con backoff.
+
+    Errores no transitorios (p.ej. 400) se propagan en el primer intento.
+    """
+    for attempt in range(max_attempts):
+        try:
+            return call()
+        except Exception as e:
+            if _is_retryable(e) and attempt < max_attempts - 1:
+                sleep(_retry_delay(e, attempt))
+            else:
+                raise
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
@@ -126,30 +173,23 @@ def extract_parlay(image_source: str | bytes | Path, api_key: str | None = None)
 
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
-    # Call Gemini — retry up to 3 times on transient 503 errors
-    import time as _time
-    last_err = None
-    for attempt in range(3):
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[SYSTEM_PROMPT, image_part],
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    max_output_tokens=4096,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
-                ),
-            )
-            last_err = None
-            break
-        except Exception as e:
-            last_err = e
-            if "503" in str(e) and attempt < 2:
-                _time.sleep(10 * (attempt + 1))   # 10s, 20s
-            else:
-                break
-    if last_err is not None:
-        raise OcrExtractionError(f"Error llamando a Gemini: {last_err}") from last_err
+    # Call Gemini — reintenta errores transitorios (503 sobrecarga / 429 cuota)
+    # con backoff que respeta el retryDelay de la API.
+    def _call():
+        return client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[SYSTEM_PROMPT, image_part],
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                max_output_tokens=4096,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+
+    try:
+        response = _generate_with_retry(_call)
+    except Exception as e:
+        raise OcrExtractionError(f"Error llamando a Gemini: {e}") from e
 
     raw = response.text.strip() if response.text else ""
 
