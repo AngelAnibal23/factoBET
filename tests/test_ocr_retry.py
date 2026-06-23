@@ -19,6 +19,25 @@ def test_is_retryable_503():
     assert ocr._is_retryable(Exception("503 UNAVAILABLE: model overloaded"))
 
 
+# La cuota DIARIA del free tier no se resetea en horas: reintentar hoy no sirve.
+DAILY_QUOTA_ERR = (
+    "429 RESOURCE_EXHAUSTED. quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', "
+    "quotaValue: '20', retryDelay: '25s'"
+)
+PER_MINUTE_QUOTA_ERR = (
+    "429 RESOURCE_EXHAUSTED. quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', "
+    "retryDelay: '20s'"
+)
+
+
+def test_daily_quota_not_retryable():
+    assert not ocr._is_retryable(Exception(DAILY_QUOTA_ERR))
+
+
+def test_per_minute_quota_is_retryable():
+    assert ocr._is_retryable(Exception(PER_MINUTE_QUOTA_ERR))
+
+
 def test_not_retryable_400():
     assert not ocr._is_retryable(Exception("400 INVALID_ARGUMENT: bad image"))
 

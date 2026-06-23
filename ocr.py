@@ -45,11 +45,25 @@ RETRY_MAX_ATTEMPTS = 4
 RETRY_BASE_DELAY   = 2.0    # segundos
 RETRY_DELAY_CAP    = 30.0   # tope por intento
 
+# Modelo OCR. Default = gemini-2.5-flash (decisión cerrada); override por env para
+# escapar de la cuota diaria del free tier apuntando a otro modelo (bucket aparte).
+OCR_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+
 _RETRYABLE_MARKERS = ("503", "429", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "OVERLOADED")
 
 
+def _is_daily_quota(err: Exception) -> bool:
+    """True si el 429 es por la cuota DIARIA del free tier (no se resetea en horas)."""
+    return "PERDAY" in str(err).upper().replace(" ", "")
+
+
 def _is_retryable(err: Exception) -> bool:
-    """True si el error de Gemini es transitorio (sobrecarga o cuota por minuto)."""
+    """True si el error de Gemini es transitorio (sobrecarga o cuota por minuto).
+
+    La cuota diaria NO es retryable: reintentar en segundos no la libera.
+    """
+    if _is_daily_quota(err):
+        return False
     s = str(err).upper()
     return any(m in s for m in _RETRYABLE_MARKERS)
 
@@ -177,7 +191,7 @@ def extract_parlay(image_source: str | bytes | Path, api_key: str | None = None)
     # con backoff que respeta el retryDelay de la API.
     def _call():
         return client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=OCR_MODEL,
             contents=[SYSTEM_PROMPT, image_part],
             config=types.GenerateContentConfig(
                 temperature=0.0,
@@ -189,6 +203,12 @@ def extract_parlay(image_source: str | bytes | Path, api_key: str | None = None)
     try:
         response = _generate_with_retry(_call)
     except Exception as e:
+        if _is_daily_quota(e):
+            raise OcrExtractionError(
+                "Se agotó la cuota DIARIA de Gemini (free tier). Reintentar hoy no "
+                "ayuda: espera al reset (medianoche hora del Pacífico) o setea "
+                "GEMINI_MODEL a otro modelo / usa una API key con billing."
+            ) from e
         raise OcrExtractionError(f"Error llamando a Gemini: {e}") from e
 
     raw = response.text.strip() if response.text else ""
