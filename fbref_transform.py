@@ -3,7 +3,10 @@ env al importar: corre en el entorno del proyecto y es testeable sin red."""
 
 import pandas as pd
 
-from validator import _best_match, MATCH_AUTO  # _best_match no lee env al importar
+# NOTA: validator (rapidfuzz/supabase/dotenv) se importa LAZY dentro de
+# resolver_equipo_id, no a nivel de módulo. Así merge_misc_shooting queda
+# importable con solo pandas en el venv aislado .venv-fbref (que no tiene
+# las deps del proyecto), donde corre el scrape.
 
 MISC_RENAME = {"CrdY": "crd_y", "CrdR": "crd_r", "2CrdY": "crd_2y",
                "Fls": "fls", "Crs": "crs", "Off": "off"}
@@ -36,19 +39,30 @@ def merge_misc_shooting(misc_df: pd.DataFrame, shooting_df: pd.DataFrame) -> pd.
 
     cols_m = [c for c in (_KEY + _CTX + list(MISC_RENAME.values())) if c in m.columns]
     cols_s = [c for c in (_KEY + list(SHOOT_RENAME.values())) if c in s.columns]
-    m = m[cols_m]
-    s = s[cols_s]
+    # soccerdata devuelve filas duplicadas por clave (misc viene 2x); deduplicar
+    # antes del merge para que sea 1:1 y no multiplique las filas.
+    m = m[cols_m].drop_duplicates(subset=_KEY)
+    s = s[cols_s].drop_duplicates(subset=_KEY)
 
     out = m.merge(s, on=_KEY, how="left")
-    return out.rename(columns={
+    out = out.rename(columns={
         "league": "liga", "date": "fecha", "opponent": "rival_fbref",
         "team": "equipo_fbref", "GF": "gf", "GA": "ga",
     })
+    # GF/GA y los conteos llegan como string desde FBref → coercer a numérico.
+    for col in ["gf", "ga", *MISC_RENAME.values(), *SHOOT_RENAME.values()]:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+    return out
 
 
-def resolver_equipo_id(nombre: str, teams: list[dict], umbral: float = MATCH_AUTO):
+def resolver_equipo_id(nombre: str, teams: list[dict], umbral: float | None = None):
     """(equipo_id | None, canonical, score). Solo acepta match >= umbral
-    (bulk, sin confirmación humana). Por debajo -> huérfano (None)."""
+    (bulk, sin confirmación humana). Por debajo -> huérfano (None).
+    Import lazy de validator: solo corre en el entorno del proyecto."""
+    from validator import _best_match, MATCH_AUTO  # no lee env relevante al importar
+    if umbral is None:
+        umbral = MATCH_AUTO
     m = _best_match(nombre, teams)
     if m.score >= umbral and m.equipo_id:
         return m.equipo_id, m.canonical, m.score

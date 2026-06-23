@@ -58,6 +58,23 @@ def test_merge_keeps_one_row_per_team_match_when_shooting_missing():
     assert out.iloc[0]["crd_y"] == 3
 
 
+def test_merge_deduplicates_source_rows():
+    # soccerdata devuelve la misma fila duplicada; el merge no debe multiplicar.
+    misc_dup = pd.concat([_misc_df(), _misc_df()])
+    shoot_dup = pd.concat([_shooting_df(), _shooting_df()])
+    out = merge_misc_shooting(misc_dup, shoot_dup)
+    assert len(out) == 1
+
+
+def test_merge_coerces_numeric_from_string():
+    # GF/GA y conteos llegan como string desde FBref → deben quedar numéricos.
+    misc = _misc_df().astype({("GF", ""): "string", ("GA", ""): "string"})
+    out = merge_misc_shooting(misc, _shooting_df())
+    assert out.iloc[0]["gf"] == 1
+    assert pd.api.types.is_numeric_dtype(out["gf"])
+    assert pd.api.types.is_numeric_dtype(out["crd_y"])
+
+
 _TEAMS = [
     {"id": "kr", "nombre_oficial": "South Korea", "aliases": ["Corea del Sur", "Korea Republic"]},
     {"id": "ar", "nombre_oficial": "Argentina", "aliases": []},
