@@ -104,17 +104,25 @@ Tu única tarea: extraer las selecciones del parlay que aparece en la imagen y d
 REGLAS ESTRICTAS:
 1. Responde SOLO con JSON válido. Cero texto antes o después.
 2. No inventes datos. Si un campo no está visible, usa null.
-3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, resultado_exacto, exotic
+3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, resultado_exacto, count, exotic
 4. Para "seleccion":
    - 1X2: home, draw, away
    - over_under: over, under  (SOLO goles de partido completo)
    - btts: yes, no
    - handicap: home, away (el equipo con handicap)
    - resultado_exacto: el marcador como "local-visitante", ej "1-3" (Marcador exacto)
+   - count: over, under  (mercado de conteo con línea)
    - exotic: el texto exacto visible (ej: "primer goleador Guerrero")
-4b. CLASIFICA COMO "exotic" (no inventes over_under): córners, tarjetas, tiros/remates,
-    saques de esquina, goles de PRIMER TIEMPO o SEGUNDO TIEMPO, y cualquier prop de jugador
-    individual (anota, asiste, tiros del jugador). El modelo solo valora goles de partido completo.
+4b. MERCADO "count" (conteos con línea over/under). Rellena además "metric" y "scope":
+    - "metric": "corners" (córners/saques de esquina) | "cards" (tarjetas amarillas/total) |
+                "shots" (remates/tiros totales) | "sot" (tiros/remates al arco/a puerta)
+    - "scope": "total" (del partido) | "home" (equipo local) | "away" (equipo visitante)
+    - "seleccion": over | under ; "linea": el número (ej 8.5)
+    Ejemplos: "Más de 9.5 córners" -> count/corners/total/over/9.5 ;
+              "Tarjetas local más de 2.5" -> count/cards/home/over/2.5 ;
+              "Remates al arco +7.5" -> count/sot/total/over/7.5
+4c. CLASIFICA COMO "exotic" SOLO lo no modelable: goleador, asistencias, jugador amonestado,
+    goles/eventos de PRIMER o SEGUNDO TIEMPO, minuto del gol, y props de jugador individual.
 5. "cuota" debe ser número decimal (ej: 1.85, 2.30). Si ves cuotas americanas (+150) conviértelas.
 6. "linea" solo para over_under y handicap (ej: 2.5 para over 2.5, -1.5 para handicap -1.5).
 7. "cuota_total" es la cuota combinada del parlay completo si aparece en la imagen.
@@ -129,7 +137,9 @@ FORMATO DE SALIDA (exactamente esto):
       "mercado": "1X2",
       "seleccion": "home",
       "cuota": 1.85,
-      "linea": null
+      "linea": null,
+      "metric": null,
+      "scope": null
     }
   ],
   "cuota_total": 5.40,
@@ -240,6 +250,8 @@ def extract_parlay(image_source: str | bytes | Path, api_key: str | None = None)
 
     for s in data["selecciones"]:
         s.setdefault("linea", None)
+        s.setdefault("metric", None)   # familia count
+        s.setdefault("scope", None)
         # Ensure cuota is float
         if s.get("cuota") is not None:
             s["cuota"] = float(s["cuota"])

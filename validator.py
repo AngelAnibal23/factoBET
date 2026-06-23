@@ -370,6 +370,8 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
             visitante_match      = vis_m,
             prob_implicita       = prob_impl,
             mercado_exotico      = s["mercado"] == "exotic",
+            metric               = s.get("metric"),
+            scope                = s.get("scope"),
         ))
 
     return ValidatedParlay(
