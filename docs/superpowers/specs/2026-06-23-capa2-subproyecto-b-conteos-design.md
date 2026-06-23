@@ -66,9 +66,18 @@ bivariada de marcador bajo (córners/tarjetas no tienen el fenómeno 0-0 de los 
   - `λ_away_m = base_liga_m · atk_m[away] · def_m[home]`
   - `factor_local_m` = ventaja de local específica de la métrica (córners de local > visitante).
   - Para INT en sede neutral (Mundial fase de grupos+) `factor_local_m = 1`.
-- **Distribución Poisson** por lado (closed-form, sin simulación):
-  - Over/under **por equipo**: `P(X_team > linea)` con `X_team ~ Poisson(λ_team_m)`.
-  - Over/under **total**: `X_total ~ Poisson(λ_home_m + λ_away_m)` (suma de Poissons).
+- **Distribución Negative Binomial** (closed-form, sin simulación). Decisión basada en
+  evidencia: se midió el índice de dispersión (var/media) sobre `estadisticas_flashscore`
+  y **tiros (1.55–1.82) y tiros al arco (1.22–1.36) están sobre-dispersos**; Poisson los
+  descalibra 4.7–5.1 pp en líneas típicas, NegBin a 0.2–2.6 pp. Córners/tarjetas tienen
+  sobredispersión leve (1.0–1.34). Por eso NegBin es el default; **Poisson es el caso
+  límite** (dispersión `d→1`, ej. tarjetas Liga 1 con d=0.96).
+  - Se estima **un índice de dispersión `d_m` por (métrica, liga)** (var/media de los
+    totales por partido). Para una media `λ`: `r = λ/(d−1)`, `p = 1/d`, `X ~ NegBin(r, p)`
+    (recupera media `λ`). Si `d ≤ 1` se usa Poisson(`λ`).
+  - Over/under **por equipo**: `P(X_team > linea)` con `λ_team_m`.
+  - Over/under **total**: `λ_total = λ_home_m + λ_away_m` con la misma `d_m` (aproxima la
+    suma como una sola NegBin; validado en el gate sobre totales).
 - Params **separados por liga**: `INT` (Mundial + Euro juntos — comparten pool de
   selecciones) y `Liga 1` (clubes peruanos). El loader elige el set según la liga del
   partido (reusa el ruteo Liga1/intl que ya existe en el analyzer).
@@ -168,8 +177,8 @@ fit_counts_model.py  ──gate por (métrica,liga)──►  parametros_modelo 
 - Mercados **por jugador** (goleador, amonestado, asistencias) — Sub-proyecto futuro
   (feed `df_sui_1`, ya investigado y viable).
 - Splits **1ª/2ª mitad** — mismo feed, futuro.
-- **Negative Binomial** (sobredispersión): Poisson en v0.1; NegBin solo si el gate queda
-  marginal en alguna métrica.
+- **Mean-variance NB1 vs NB2 / dispersión dependiente de la media**: v0.1 usa un único
+  `d` por (métrica, liga). Refinar la relación media-varianza solo si el gate lo pide.
 - **Data live / diaria** — el modelo usa la data histórica ya cargada.
 - Mejoras al motor de goles (Tweedie / corrección xG×prob del video de referencia) —
   ortogonal, futuro.

@@ -4,7 +4,7 @@
 
 **Goal:** Modelar córners/tarjetas/tiros/tiros-al-arco desde `estadisticas_flashscore` con shrinkage por equipo, e integrarlos al motor de bet builder como segunda familia ("count") para que dejen de contar como patas exóticas.
 
-**Architecture:** Modelo multiplicativo ataque/defensa por equipo estimado por método de momentos con shrinkage empírico-Bayes (robusto a la muestra fina del Mundial), distribución Poisson para over/under (closed-form). Ajuste offline con gate por (métrica, liga); params congelados en Supabase `parametros_modelo`; el motor combina familias por techo conservador (min) + estimado por independencia. Espejo del patrón intl (`engine_intl_v01.py` → `load_intl_to_supabase.py` → `analyzer._load_intl_predictor`).
+**Architecture:** Modelo multiplicativo ataque/defensa por equipo estimado por método de momentos con shrinkage empírico-Bayes (robusto a la muestra fina del Mundial), distribución **Negative Binomial** para over/under (closed-form; sobredispersión confirmada empíricamente en los datos — tiros disp 1.55–1.82; Poisson es el caso límite d→1). Ajuste offline con gate por (métrica, liga); params congelados en Supabase `parametros_modelo`; el motor combina familias por techo conservador (min) + estimado por independencia. Espejo del patrón intl (`engine_intl_v01.py` → `load_intl_to_supabase.py` → `analyzer._load_intl_predictor`).
 
 **Tech Stack:** Python 3.12, numpy, scipy.stats.poisson, supabase-py, pytest. Sin red en las funciones puras de `counts_model.py`.
 
@@ -16,7 +16,7 @@
 
 ## Estructura de archivos
 
-- **Create** `counts_model.py` — funciones puras de estimación (shrinkage) + clase `CountsModel` (λ por métrica, Poisson over/under). Sin red.
+- **Create** `counts_model.py` — funciones puras de estimación (shrinkage) + clase `CountsModel` (λ por métrica, NegBin/Poisson over/under). Sin red.
 - **Create** `fit_counts_model.py` — ajuste offline + gate por (métrica, liga) + reporte. Lee `estadisticas_flashscore`.
 - **Create** `load_counts_to_supabase.py` — persiste params gateados en `parametros_modelo` (version `counts_v0.1`).
 - **Create** `tests/test_counts_model.py` — TDD de las funciones puras.
@@ -90,11 +90,12 @@ Expected: FAIL con `ModuleNotFoundError: No module named 'counts_model'`.
 """Modelo de conteos (córners/tarjetas/tiros) de la Capa 2.
 
 Multiplicativo ataque/defensa por equipo, estimado por método de momentos con
-shrinkage empírico-Bayes (robusto a muestra fina), distribución Poisson para
-over/under. NO lee red al importar: funciones puras testeables.
+shrinkage empírico-Bayes (robusto a muestra fina), distribución Negative Binomial
+para over/under (Poisson como caso límite d<=1). NO lee red al importar: funciones
+puras testeables.
 """
 
-from scipy.stats import poisson
+from scipy.stats import poisson, nbinom
 
 METRICAS = ("corners", "cards", "shots", "sot")
 COL_A_METRICA = {"corners": "corners", "crd_y": "cards", "sh": "shots", "sot": "sot"}
@@ -152,7 +153,7 @@ git commit -m "feat: counts_model.estimar_metrica (shrinkage atk/def por equipo)
 
 ---
 
-### Task 2: `CountsModel` — λ por métrica + Poisson over/under (función pura, TDD)
+### Task 2: `CountsModel` — λ por métrica + NegBin/Poisson over/under (función pura, TDD)
 
 Clase que congela params (patrón `from_params`), calcula λ local/visitante por métrica y la probabilidad over/under por equipo y total.
 
@@ -168,9 +169,14 @@ from counts_model import CountsModel
 
 PARAMS = {
     "corners": {
-        "base_home": 6.0, "base_away": 4.0, "factor_neutral": 1.0,
+        "base_home": 6.0, "base_away": 4.0, "factor_neutral": 1.0, "disp": 1.0,
         "atk": {"A": 1.5, "B": 1.0}, "def": {"A": 1.0, "B": 1.2},
-    }
+    },
+    # métrica sobre-dispersa para probar el camino NegBin
+    "shots": {
+        "base_home": 13.0, "base_away": 11.0, "factor_neutral": 1.0, "disp": 1.6,
+        "atk": {}, "def": {},
+    },
 }
 
 
@@ -191,10 +197,11 @@ def test_lambdas_neutral_usa_base_promedio():
     assert round(la_n, 4) == round(5.0 * 1.0 * 1.0, 4)   # 5.0
 
 
-def test_prob_over_under_equipo_y_total():
+def test_prob_over_under_poisson_cuando_disp_uno():
+    # corners tiene disp=1.0 -> camino Poisson exacto
     m = CountsModel.from_params(PARAMS)
-    # equipo local over 9.5: P(X>9.5) con X~Poisson(10.8)
     from scipy.stats import poisson
+    # equipo local over 9.5: P(X>9.5) con X~Poisson(10.8)
     p_home_over = m.prob_over_under("corners", "home", "over", 9.5, "A", "B", False)
     assert abs(p_home_over - (1 - poisson.cdf(9, 10.8))) < 1e-9
     # total over 13.5: X~Poisson(10.8+4.0=14.8)
@@ -203,6 +210,19 @@ def test_prob_over_under_equipo_y_total():
     # under es complemento
     p_total_under = m.prob_over_under("corners", "total", "under", 13.5, "A", "B", False)
     assert abs(p_total_under - poisson.cdf(13, 14.8)) < 1e-9
+
+
+def test_prob_over_under_negbin_cuando_sobredisperso():
+    # shots tiene disp=1.6 -> camino NegBin con r=lam/(d-1), p=1/d
+    m = CountsModel.from_params(PARAMS)
+    from scipy.stats import nbinom
+    lam = 13.0 + 11.0   # total, atk/def vacíos -> mult 1.0
+    d = 1.6
+    r, p = lam / (d - 1.0), 1.0 / d
+    p_over = m.prob_over_under("shots", "total", "over", 22.5, "A", "B", False)
+    assert abs(p_over - (1 - nbinom.cdf(22, r, p))) < 1e-9
+    # la media de la NegBin recupera lam (sanity): media = r*(1-p)/p
+    assert abs(r * (1 - p) / p - lam) < 1e-9
 
 
 def test_equipo_desconocido_cae_a_multiplicador_neutro():
@@ -263,7 +283,11 @@ class CountsModel:
 
     def prob_over_under(self, metrica: str, scope: str, sel: str, linea: float,
                         home: str, away: str, neutral: bool) -> float:
-        """P(over/under) de la métrica en el scope dado. scope: total|home|away."""
+        """P(over/under) de la métrica en el scope dado. scope: total|home|away.
+
+        Negative Binomial con dispersión `d` por métrica (Poisson si d<=1). Para
+        media `lam` y dispersión `d>1`: r=lam/(d-1), p=1/d, X~NegBin(r,p) (media lam).
+        """
         lh, la = self.lambdas(metrica, home, away, neutral)
         if scope == "home":
             lam = lh
@@ -273,22 +297,26 @@ class CountsModel:
             lam = lh + la
         else:
             raise ValueError(f"scope inválido: {scope!r}")
-        # P(X > linea) con linea semientera: usa floor(linea)
+        d = self.params[metrica].get("disp", 1.0)
         k = int(linea)            # over 9.5 -> P(X>=10) = 1 - cdf(9)
-        p_over = 1.0 - poisson.cdf(k, lam)
+        if d > 1.0 + 1e-9:
+            r, p = lam / (d - 1.0), 1.0 / d
+            p_over = 1.0 - nbinom.cdf(k, r, p)
+        else:
+            p_over = 1.0 - poisson.cdf(k, lam)
         return p_over if sel == "over" else (1.0 - p_over)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_counts_model.py -v`
-Expected: PASS (7 tests).
+Expected: PASS (8 tests: 2 de Task 1 + 6 de Task 2).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add counts_model.py tests/test_counts_model.py
-git commit -m "feat: CountsModel.lambdas + prob_over_under (Poisson por metrica/scope)"
+git commit -m "feat: CountsModel.lambdas + prob_over_under (NegBin/Poisson por metrica/scope)"
 ```
 
 ---
@@ -320,7 +348,6 @@ from collections import defaultdict
 
 import numpy as np
 from dotenv import load_dotenv
-from scipy.stats import poisson
 from supabase import create_client
 
 from counts_model import METRICAS, COL_A_METRICA, estimar_metrica, CountsModel
@@ -377,19 +404,23 @@ def brier_ou(prob_over_list, ocurrio_over_list):
     return float(np.mean((p - o) ** 2))
 
 
-def evaluar(modelo_params, test, metrica, lineas, baseline=False):
-    """Brier promedio sobre las líneas, en el test, para una métrica/liga."""
-    m = CountsModel.from_params({metrica: modelo_params})
+def estimar_disp(partidos):
+    """Índice de dispersión (var/media) de los totales por partido. >=1 (clamp)."""
+    tot = np.array([p["val_home"] + p["val_away"] for p in partidos], float)
+    if tot.mean() <= 0:
+        return 1.0
+    return max(tot.var() / tot.mean(), 1.0)
+
+
+def evaluar(params_metrica, test, metrica, lineas):
+    """Brier promedio sobre las líneas (over/under total). `params_metrica` ya
+    trae base/atk/def/disp. El baseline se obtiene pasando atk={}/def={}."""
+    m = CountsModel.from_params({metrica: params_metrica})
     briers = []
     for linea in lineas:
         probs, occ = [], []
         for p in test:
-            home, away = p["home"], p["away"]
-            if baseline:
-                lam = modelo_params["base_home"] + modelo_params["base_away"]
-                p_over = 1.0 - poisson.cdf(int(linea), lam)
-            else:
-                p_over = m.prob_over_under(metrica, "total", "over", linea, home, away, False)
+            p_over = m.prob_over_under(metrica, "total", "over", linea, p["home"], p["away"], False)
             probs.append(p_over)
             occ.append(1.0 if (p["val_home"] + p["val_away"]) > linea else 0.0)
         briers.append(brier_ou(probs, occ))
@@ -422,17 +453,20 @@ def main():
                 continue
             est = estimar_metrica(train, k=K_SHRINK)
             est["factor_neutral"] = 1.0
+            est["disp"] = estimar_disp(train)
             lineas = LINEAS_GATE[metrica]
-            bs_m = evaluar(est, test, metrica, lineas, baseline=False)
-            bs_b = evaluar(est, test, metrica, lineas, baseline=True)
+            base_params = {**est, "atk": {}, "def": {}}   # misma NegBin, sin señal per-equipo
+            bs_m = evaluar(est, test, metrica, lineas)
+            bs_b = evaluar(base_params, test, metrica, lineas)
             mejora = (bs_b - bs_m) / bs_b if bs_b > 0 else 0.0
             ok = bs_m < bs_b and mejora >= GATE_MIN_MEJORA
-            print(f"  {metrica:8}: Brier modelo={bs_m:.4f} base={bs_b:.4f} "
-                  f"mejora={mejora*100:+.1f}%  {'✅ PASA' if ok else '❌ no pasa'}")
+            print(f"  {metrica:8}: disp={est['disp']:.2f}  Brier modelo={bs_m:.4f} "
+                  f"base={bs_b:.4f} mejora={mejora*100:+.1f}%  {'✅ PASA' if ok else '❌ no pasa'}")
             if ok:
                 # params de PRODUCCIÓN = re-fit sobre TODOS los partidos de la liga
                 prod = estimar_metrica(partidos, k=K_SHRINK)
                 prod["factor_neutral"] = 1.0
+                prod["disp"] = estimar_disp(partidos)
                 publicables.setdefault(lk, {})[metrica] = prod
 
     print("\n" + "=" * 64)
@@ -525,7 +559,7 @@ def main():
                 "notas": json.dumps({
                     "metrica": metrica,
                     "base_home": est["base_home"], "base_away": est["base_away"],
-                    "factor_neutral": est["factor_neutral"],
+                    "factor_neutral": est["factor_neutral"], "disp": est["disp"],
                 }),
             }).execute()
         print(f"  {lk} ({nombre}): cargadas {sorted(metricas)}")
@@ -560,7 +594,7 @@ git commit -m "feat: load_counts_to_supabase persiste params gateados (counts_v0
 
 ### Task 5: `betbuilder.py` — familia COUNT, techo=min, estimado por independencia
 
-Integra los mercados count al motor: marginal por Poisson, techo conservador como min entre familias, y un estimado por independencia. Añade `prob_estimada` a `ParlayAnalysis`.
+Integra los mercados count al motor: marginal por NegBin/Poisson, techo conservador como min entre familias, y un estimado por independencia. Añade `prob_estimada` a `ParlayAnalysis`.
 
 **Files:**
 - Modify: `analyzer.py` (dataclass `ParlayAnalysis`: nuevo campo)
@@ -650,7 +684,7 @@ COUNT_MARKET = "count"   # mercado genérico de conteos (metric + scope en la se
 
 
 def count_leg_prob(model, sel, home, away, neutral) -> float | None:
-    """Marginal de una pata count vía Poisson. None si la métrica no está
+    """Marginal de una pata count vía NegBin/Poisson. None si la métrica no está
     gateada en el modelo de esta liga (entonces la pata es exótica)."""
     if model is None or not model.tiene(sel.metric):
         return None
@@ -689,7 +723,7 @@ En el bucle de selecciones, sustituir la rama de clasificación por:
         elif is_count and count_p is not None:
             prob_mod = round(count_p, 6)
             count_marginals.append(count_p)
-            nivel_cov, alertas = "MEDIA", ["Mercado de conteo: marginal Poisson con shrinkage."]
+            nivel_cov, alertas = "MEDIA", ["Mercado de conteo: marginal NegBin con shrinkage."]
         else:
             prob_mod = None
             exoticas_desc.append(sel.seleccion)
@@ -840,7 +874,7 @@ def _load_counts_model(liga_nombre: str):
         meta = json.loads(r["notas"])
         params[meta["metrica"]] = {
             "base_home": meta["base_home"], "base_away": meta["base_away"],
-            "factor_neutral": meta["factor_neutral"],
+            "factor_neutral": meta["factor_neutral"], "disp": meta.get("disp", 1.0),
             "atk": r["attack_params"], "def": r["defense_params"],
         }
     model = CountsModel.from_params(params)
@@ -927,4 +961,5 @@ git commit -m "docs: reporte de gate del modelo de conteos (Sub-proyecto B)"
 - **Techo = cota superior:** `min` entre familias preserva el "cero falsos positivos"; el `verdict` existente no cambia de firma. El `estimado` es informativo, NO altera el veredicto.
 - **Compatibilidad OCR:** selecciones viejas (`exotic`) o count sin `metric`/`scope` caen al path exótico sin romper.
 - **Gate honesto:** una métrica que no vence al baseline en una liga queda fuera para esa liga (su pata sigue contando exótica). Es correcto, no una falla.
-- **Líneas del gate** (`LINEAS_GATE`) son aproximaciones de mercado; si una métrica queda muy cerca del umbral, revisar líneas reales de las casas antes de subir `K_SHRINK` o pasar a Negative Binomial.
+- **Líneas del gate** (`LINEAS_GATE`) son aproximaciones de mercado; si una métrica queda muy cerca del umbral, revisar líneas reales de las casas antes de subir `K_SHRINK`.
+- **Distribución NegBin por defecto** (sobredispersión confirmada empíricamente: tiros disp 1.55–1.82, tiros al arco 1.22–1.36, córners/tarjetas 1.0–1.34). `d` se estima por (métrica, liga) sobre los totales por partido; Poisson es el caso límite `d<=1` (ej. tarjetas Liga 1, d=0.96). Refinar la relación media-varianza (NB1/NB2) solo si el gate lo pide.
