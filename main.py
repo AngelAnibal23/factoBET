@@ -304,6 +304,39 @@ async def analizar_parlay(
     return JSONResponse(content=_ok(data, ms, result.version_modelo))
 
 
+@app.get("/api/v1/parlay/demo")
+async def parlay_demo():
+    """Verificación visual SIN Gemini: corre el motor real sobre el bet builder de
+    ejemploBET3 (Argentina vs Austria) y devuelve el mismo envelope que el análisis
+    normal. Útil cuando la cuota de OCR está agotada. No persiste ni llama al OCR."""
+    t0 = time.monotonic()
+    ocr_data = {
+        "selecciones": [
+            {"equipo_local": "Argentina", "equipo_visitante": "Austria",
+             "mercado": "1X2", "seleccion": "home", "cuota": None, "linea": None},
+            {"equipo_local": "Argentina", "equipo_visitante": "Austria",
+             "mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 1.5},
+            {"equipo_local": "Argentina", "equipo_visitante": "Austria",
+             "mercado": "exotic", "seleccion": "1+ Lionel Messi Tiros al Arco",
+             "cuota": None, "linea": None},
+        ],
+        "cuota_total": 1.87,
+        "casa_apuestas": "Betano",
+    }
+    try:
+        parlay = validate(ocr_data, _get_teams())
+        result = analyze(parlay)
+    except Exception as e:
+        ms = int((time.monotonic() - t0) * 1000)
+        return JSONResponse(status_code=500,
+                            content=_err("DEMO_ERROR", "No se pudo armar el demo.", str(e), ms))
+    ms = int((time.monotonic() - t0) * 1000)
+    data = _serialize_analysis(result, parlay.needs_confirmation, narrativa=None)
+    data["image_hash"] = "demo"
+    data["parlay_id"] = None
+    return JSONResponse(content=_ok(data, ms, result.version_modelo))
+
+
 @app.get("/api/v1/modelo/estado")
 async def modelo_estado():
     t0     = time.monotonic()

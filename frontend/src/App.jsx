@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ApiError } from './api.js'
 import UploadZone from './components/UploadZone.jsx'
 import Spinner from './components/Spinner.jsx'
@@ -28,6 +28,19 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [meta, setMeta] = useState(null)
   const [apiError, setApiError] = useState(null)
+
+  // Modo demo (?demo): carga el analisis real sin Gemini para verificacion visual.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('demo')) return
+    setState('uploading')
+    fetch('/api/v1/parlay/demo')
+      .then(r => r.json())
+      .then(json => {
+        if (!json.success) throw new ApiError(json.error?.message || 'demo error')
+        setResult(json.data); setMeta(json.meta); setState('result')
+      })
+      .catch(err => { setApiError(err); setState('error') })
+  }, [])
 
   async function handleSubmit() {
     if (!file) return
