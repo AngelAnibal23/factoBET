@@ -51,3 +51,53 @@ def parse_results(html: str) -> list:
                 "away": alts[1],
             })
     return out
+
+
+# nombre de métrica Flashscore -> columna canónica
+METRIC_MAP = {
+    "Corner kicks": "corners",
+    "Yellow cards": "crd_y",
+    "Red cards": "crd_r",
+    "Total shots": "sh",
+    "Shots on target": "sot",
+    "Fouls": "fouls",
+    "Offsides": "offsides",
+    "Ball possession": "possession",
+    "Expected goals (xG)": "xg",
+}
+
+
+def _num(raw):
+    """'54%' -> 54, '2.3' -> 2.3, '4' -> 4, None/'' -> None."""
+    if raw is None:
+        return None
+    s = str(raw).replace("%", "").strip()
+    if s == "":
+        return None
+    try:
+        f = float(s)
+        return int(f) if f.is_integer() else f
+    except ValueError:
+        return None
+
+
+def tidy_match(meta: dict, stats: dict, liga: str, season: str) -> list:
+    """meta {event_id,fecha,home,away} + stats {métrica:(local,visit)} ->
+    2 filas por-equipo con columnas canónicas."""
+    rows = []
+    perspectivas = [
+        (meta["home"], meta["away"], True, 0),
+        (meta["away"], meta["home"], False, 1),
+    ]
+    for equipo, rival, es_local, idx in perspectivas:
+        row = {
+            "event_id": meta["event_id"], "fecha": meta["fecha"],
+            "liga": liga, "season": season,
+            "equipo_flashscore": equipo, "rival_flashscore": rival,
+            "es_local": es_local,
+        }
+        for fs_name, col in METRIC_MAP.items():
+            par = stats.get(fs_name)
+            row[col] = _num(par[idx]) if par else None
+        rows.append(row)
+    return rows

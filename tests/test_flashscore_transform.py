@@ -1,7 +1,7 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from flashscore_transform import parse_stats_feed, parse_results
+from flashscore_transform import parse_stats_feed, parse_results, tidy_match
 
 SEP_F = "¬"   # ¬
 SEP_KV = "÷"  # ÷
@@ -61,3 +61,43 @@ def test_parse_results_ignores_blocks_without_teams():
     # un id sin participantes no debe romper ni emitir fila
     html = '<div id="g_1_ABCD1234" class="event__match"></div>'
     assert parse_results(html) == []
+
+
+def test_tidy_match_two_team_rows():
+    meta = {"event_id": "rBfk6fO7", "fecha": "2022-12-18",
+            "home": "Argentina", "away": "France"}
+    stats = {
+        "Corner kicks": ("4", "2"),
+        "Yellow cards": ("1", "3"),
+        "Total shots": ("12", "9"),
+        "Shots on target": ("5", "4"),
+        "Ball possession": ("54%", "46%"),
+        "Expected goals (xG)": ("2.3", "1.1"),
+    }
+    rows = tidy_match(meta, stats, liga="INT-World Cup", season="2022")
+    assert len(rows) == 2
+
+    local = rows[0]
+    assert local["equipo_flashscore"] == "Argentina"
+    assert local["rival_flashscore"] == "France"
+    assert local["es_local"] is True
+    assert local["corners"] == 4
+    assert local["crd_y"] == 1
+    assert local["sot"] == 5
+    assert local["possession"] == 54        # sin '%'
+    assert local["xg"] == 2.3
+    assert local["liga"] == "INT-World Cup"
+
+    visit = rows[1]
+    assert visit["equipo_flashscore"] == "France"
+    assert visit["es_local"] is False
+    assert visit["corners"] == 2
+    assert visit["crd_y"] == 3
+
+
+def test_tidy_match_missing_metric_is_none():
+    meta = {"event_id": "x", "fecha": "2024-06-01", "home": "A", "away": "B"}
+    rows = tidy_match(meta, {"Corner kicks": ("5", "1")}, liga="L", season="2024")
+    assert rows[0]["corners"] == 5
+    assert rows[0]["xg"] is None          # métrica ausente -> None
+    assert rows[0]["sot"] is None
