@@ -25,3 +25,29 @@ def parse_stats_feed(text: str) -> dict:
             out[metric] = (home, v)
             metric = None
     return out
+
+
+_DATE_RE = re.compile(r'event__time">(\d{2})\.(\d{2})\.(\d{4})')
+_ALT_RE = re.compile(r'data-testid="wcl-participantLogo"[^>]*?alt="([^"]+)"')
+
+
+def parse_results(html: str) -> list:
+    """Del HTML de la página de resultados, una entrada por partido:
+    {event_id, fecha (ISO), home, away}."""
+    out = []
+    bloques = html.split('id="g_1_')[1:]
+    for b in bloques:
+        eid = b[:8]
+        if not eid.isalnum():
+            continue
+        dm = _DATE_RE.search(b[:1200])
+        alts = _ALT_RE.findall(b[:2500])
+        if dm and len(alts) >= 2:
+            d, mth, y = dm.groups()
+            out.append({
+                "event_id": eid,
+                "fecha": f"{y}-{mth}-{d}",
+                "home": alts[0],
+                "away": alts[1],
+            })
+    return out
