@@ -6,3 +6,5 @@ frontend/dist/
 frontend/node_modules/
 intl_results.csv
 .superpowers/
+.venv-fbref/
+fbref_stats.csv
