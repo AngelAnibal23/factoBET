@@ -164,10 +164,11 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
     covered = lh is not None
     matrix = scoreline_matrix(lh, la, rho) if covered else None
 
-    # Nombres del partido para el modelo de conteos (mismas selecciones, un partido).
+    # Identidad del partido para el modelo de conteos: equipo_id (resuelto), igual
+    # que la clave con que se ajustó el modelo. Mismas selecciones, un partido.
     match_sel = next((s for s in parlay.selecciones if s.visitante_match), None)
-    c_home = match_sel.local_match.canonical if match_sel else None
-    c_away = match_sel.visitante_match.canonical if match_sel else None
+    c_home = match_sel.local_match.equipo_id if match_sel else None
+    c_away = match_sel.visitante_match.equipo_id if match_sel else None
 
     analyses = []
     goal_legs = []

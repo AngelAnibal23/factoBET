@@ -33,7 +33,7 @@ def cargar_filas():
     desde = 0
     while True:
         chunk = (sb.table("estadisticas_flashscore")
-                 .select("event_id,fecha,liga,equipo_flashscore,es_local,corners,crd_y,sh,sot")
+                 .select("event_id,fecha,liga,equipo_id,equipo_flashscore,es_local,corners,crd_y,sh,sot")
                  .range(desde, desde + paso - 1).execute().data)
         filas.extend(chunk)
         if len(chunk) < paso:
@@ -44,7 +44,9 @@ def cargar_filas():
 
 def a_partidos(filas, col):
     """Reconstruye partidos {home,away,val_home,val_away,fecha,liga} para una
-    columna métrica, uniendo las 2 filas por event_id. Descarta valores nulos."""
+    columna métrica, uniendo las 2 filas por event_id. Las claves home/away son
+    `equipo_id` (identidad resuelta) para que coincidan con lo que pasa el motor
+    en inferencia. Descarta valores nulos y filas sin equipo_id (huérfanos)."""
     por_evento = defaultdict(dict)
     for f in filas:
         lado = "home" if f["es_local"] else "away"
@@ -54,10 +56,11 @@ def a_partidos(filas, col):
         if "home" not in ev or "away" not in ev:
             continue
         vh, va = ev["home"].get(col), ev["away"].get(col)
-        if vh is None or va is None:
+        hid, aid = ev["home"].get("equipo_id"), ev["away"].get("equipo_id")
+        if vh is None or va is None or hid is None or aid is None:
             continue
         partidos.append({
-            "home": ev["home"]["equipo_flashscore"], "away": ev["away"]["equipo_flashscore"],
+            "home": hid, "away": aid,
             "val_home": float(vh), "val_away": float(va),
             "fecha": ev["home"]["fecha"], "liga": ev["home"]["liga"],
         })

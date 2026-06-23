@@ -562,6 +562,41 @@ def _load_intl_predictor() -> DixonColesIntl:
     return _cached_intl_model   # type: ignore[return-value]
 
 
+_cached_counts_model: dict = {}
+
+
+def _load_counts_model(liga_nombre: str):
+    """Carga el CountsModel de una liga desde parametros_modelo (counts_v0.1).
+    liga_nombre: 'Internacional' | 'Liga 1 Peruana'. None si no hay params."""
+    import json
+    from counts_model import CountsModel
+    if liga_nombre in _cached_counts_model:
+        return _cached_counts_model[liga_nombre]
+    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    liga = sb.table("ligas").select("id").eq("nombre", liga_nombre).execute().data
+    if not liga:
+        _cached_counts_model[liga_nombre] = None
+        return None
+    rows = (sb.table("parametros_modelo")
+            .select("attack_params,defense_params,notas")
+            .eq("liga_id", liga[0]["id"]).eq("version_modelo", "counts_v0.1")
+            .eq("is_production", True).execute().data)
+    if not rows:
+        _cached_counts_model[liga_nombre] = None
+        return None
+    params = {}
+    for r in rows:
+        meta = json.loads(r["notas"])
+        params[meta["metrica"]] = {
+            "base_home": meta["base_home"], "base_away": meta["base_away"],
+            "factor_neutral": meta["factor_neutral"], "disp": meta.get("disp", 1.0),
+            "atk": r["attack_params"], "def": r["defense_params"],
+        }
+    model = CountsModel.from_params(params)
+    _cached_counts_model[liga_nombre] = model
+    return model
+
+
 def _load_team_liga_map() -> dict[str, str]:
     """Mapa equipo_id -> "liga1" | "internacional" para rutear cada parlay."""
     global _cached_team_liga, _team_liga_ts
@@ -729,15 +764,17 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
 
     match_sel = next((s for s in parlay.selecciones if s.visitante_match), None)
 
+    neutral_flag = False
     if liga == "internacional":
         model = _load_intl_predictor()
         rho, version = model.rho, "intl_v0.1"
+        counts = _load_counts_model("Internacional")
         if match_sel:
             home = match_sel.local_match.canonical
             away = match_sel.visitante_match.canonical
+            neutral_flag = home not in HOSTS_2026
             if home in model.idx and away in model.idx:
-                neutral = home not in HOSTS_2026
-                lh, la = model.lambdas(home, away, neutral)
+                lh, la = model.lambdas(home, away, neutral_flag)
             else:
                 lh, la = None, None
         else:
@@ -745,6 +782,7 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
     else:
         model, _, _ = _load_and_fit()
         rho, version = model.rho, "v0.2"
+        counts = _load_counts_model("Liga 1 Peruana")
         if match_sel:
             hid = match_sel.local_match.equipo_id
             aid = match_sel.visitante_match.equipo_id
@@ -755,7 +793,8 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
         else:
             lh, la = None, None
 
-    return analyze_bet_builder(parlay, lh, la, rho, version, margin)
+    return analyze_bet_builder(parlay, lh, la, rho, version, margin,
+                               counts_model=counts, neutral=neutral_flag)
 
 
 def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
