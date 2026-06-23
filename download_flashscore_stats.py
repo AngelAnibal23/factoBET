@@ -21,8 +21,8 @@ SALIDA = "flashscore_stats.csv"
 
 # (liga, url de resultados, season)
 TOURNAMENTS = [
-    ("INT-World Cup", "https://www.flashscore.com/football/world/world-cup-2018/results/", "2018"),
-    ("INT-World Cup", "https://www.flashscore.com/football/world/world-cup-2022/results/", "2022"),
+    ("INT-World Cup", "https://www.flashscore.com/football/world/world-championship-2018/results/", "2018"),
+    ("INT-World Cup", "https://www.flashscore.com/football/world/world-championship-2022/results/", "2022"),
     ("INT-European Championship", "https://www.flashscore.com/football/europe/euro-2020/results/", "2020"),
     ("INT-European Championship", "https://www.flashscore.com/football/europe/euro-2024/results/", "2024"),
     ("Liga 1 Peru", "https://www.flashscore.com/football/peru/liga-1-2024/results/", "2024"),
