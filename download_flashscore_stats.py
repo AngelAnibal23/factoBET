@@ -28,6 +28,21 @@ TOURNAMENTS = [
     # archiva con slug fechado: el archivo salta de euro-2020 a nada). OJO: cuando
     # arranque el ciclo Euro 2028, `euro` apuntara a 2028; re-confirmar el slug.
     ("INT-European Championship", "https://www.flashscore.com/football/europe/euro/results/", "2024"),
+    # ── Extensión de densidad para el Mundial (Sub-proyecto B): clasificatorios +
+    # Nations League + amistosos. Todo agrupa al pool "INT" (liga_key startswith INT-).
+    # Sube partidos/selección de ~6 a decenas → saca la señal de conteos del ruido.
+    # Clasificatorios Mundial 2026 por confederación: slug `/{region}/world-championship/`
+    # (genérico = ciclo actual; el World Cup en sí usa `world-championship-{año}`).
+    ("INT-WC Qualifiers", "https://www.flashscore.com/football/south-america/world-championship/results/", "2026"),
+    ("INT-WC Qualifiers", "https://www.flashscore.com/football/europe/world-championship/results/", "2026"),
+    ("INT-WC Qualifiers", "https://www.flashscore.com/football/north-central-america/world-championship/results/", "2026"),
+    ("INT-WC Qualifiers", "https://www.flashscore.com/football/africa/world-championship/results/", "2026"),
+    ("INT-WC Qualifiers", "https://www.flashscore.com/football/asia/world-championship/results/", "2026"),
+    # Nations League (ediciones con sufijo fechado, como los Euros viejos).
+    ("INT-Nations League", "https://www.flashscore.com/football/europe/uefa-nations-league-2022-2023/results/", "2022"),
+    ("INT-Nations League", "https://www.flashscore.com/football/europe/uefa-nations-league-2024-2025/results/", "2024"),
+    # Amistosos internacionales (slug genérico, ~recientes).
+    ("INT-Friendly", "https://www.flashscore.com/football/world/friendly-international/results/", "2025"),
     ("Liga 1 Peru", "https://www.flashscore.com/football/peru/liga-1-2024/results/", "2024"),
     ("Liga 1 Peru", "https://www.flashscore.com/football/peru/liga-1-2025/results/", "2025"),
 ]
