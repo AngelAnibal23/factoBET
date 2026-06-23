@@ -24,7 +24,10 @@ TOURNAMENTS = [
     ("INT-World Cup", "https://www.flashscore.com/football/world/world-championship-2018/results/", "2018"),
     ("INT-World Cup", "https://www.flashscore.com/football/world/world-championship-2022/results/", "2022"),
     ("INT-European Championship", "https://www.flashscore.com/football/europe/euro-2020/results/", "2020"),
-    ("INT-European Championship", "https://www.flashscore.com/football/europe/euro-2024/results/", "2024"),
+    # Euro 2024 vive bajo el slug GENERICO `euro` (la edicion mas reciente no se
+    # archiva con slug fechado: el archivo salta de euro-2020 a nada). OJO: cuando
+    # arranque el ciclo Euro 2028, `euro` apuntara a 2028; re-confirmar el slug.
+    ("INT-European Championship", "https://www.flashscore.com/football/europe/euro/results/", "2024"),
     ("Liga 1 Peru", "https://www.flashscore.com/football/peru/liga-1-2024/results/", "2024"),
     ("Liga 1 Peru", "https://www.flashscore.com/football/peru/liga-1-2025/results/", "2025"),
 ]
