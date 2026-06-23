@@ -3,6 +3,8 @@ env al importar: corre en el entorno del proyecto y es testeable sin red."""
 
 import pandas as pd
 
+from validator import _best_match, MATCH_AUTO  # _best_match no lee env al importar
+
 MISC_RENAME = {"CrdY": "crd_y", "CrdR": "crd_r", "2CrdY": "crd_2y",
                "Fls": "fls", "Crs": "crs", "Off": "off"}
 SHOOT_RENAME = {"Sh": "sh", "SoT": "sot"}
@@ -42,3 +44,12 @@ def merge_misc_shooting(misc_df: pd.DataFrame, shooting_df: pd.DataFrame) -> pd.
         "league": "liga", "date": "fecha", "opponent": "rival_fbref",
         "team": "equipo_fbref", "GF": "gf", "GA": "ga",
     })
+
+
+def resolver_equipo_id(nombre: str, teams: list[dict], umbral: float = MATCH_AUTO):
+    """(equipo_id | None, canonical, score). Solo acepta match >= umbral
+    (bulk, sin confirmación humana). Por debajo -> huérfano (None)."""
+    m = _best_match(nombre, teams)
+    if m.score >= umbral and m.equipo_id:
+        return m.equipo_id, m.canonical, m.score
+    return None, "", m.score

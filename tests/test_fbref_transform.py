@@ -2,7 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pandas as pd
-from fbref_transform import merge_misc_shooting
+from fbref_transform import merge_misc_shooting, resolver_equipo_id
 
 
 def _idx():
@@ -56,3 +56,30 @@ def test_merge_keeps_one_row_per_team_match_when_shooting_missing():
     assert len(out) == 1
     assert pd.isna(out.iloc[0]["sh"])
     assert out.iloc[0]["crd_y"] == 3
+
+
+_TEAMS = [
+    {"id": "kr", "nombre_oficial": "South Korea", "aliases": ["Corea del Sur", "Korea Republic"]},
+    {"id": "ar", "nombre_oficial": "Argentina", "aliases": []},
+]
+
+
+def test_resolver_match_por_alias():
+    # FBref dice "Korea Republic"; el alias lo lleva a South Korea.
+    eid, canon, score = resolver_equipo_id("Korea Republic", _TEAMS)
+    assert eid == "kr"
+    assert canon == "South Korea"
+    assert score >= 0.85
+
+
+def test_resolver_huerfano_devuelve_none():
+    eid, canon, score = resolver_equipo_id("Atlantis United", _TEAMS)
+    assert eid is None
+    assert canon == ""
+
+
+def test_resolver_umbral_estricto_descarta_match_debil():
+    # "Argentino" matchea Argentina con score ~0.94 (MATCHED por defecto);
+    # forzando umbral 0.99 ese match razonable cae a huérfano.
+    eid, _, _ = resolver_equipo_id("Argentino", _TEAMS, umbral=0.99)
+    assert eid is None
