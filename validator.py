@@ -94,6 +94,9 @@ class ValidatedSelection:
     # Derived
     prob_implicita:        Optional[float]   # None en bet builder
     mercado_exotico:       bool
+    # Mercado de conteo (familia "count"): métrica + scope. None para otros mercados.
+    metric:                Optional[str] = None   # corners|cards|shots|sot
+    scope:                 Optional[str] = None   # total|home|away
 
 
 @dataclass

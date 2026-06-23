@@ -123,3 +123,50 @@ def test_analyze_bet_builder_sin_cuota_raises():
     import pytest
     with pytest.raises(betbuilder.BetBuilderSinCuotaError):
         analyzer._analyze_bet_builder_route(parlay, "internacional", 0.06)
+
+
+# ── Familia COUNT (Sub-proyecto B) ──────────────────────────────────────────
+from counts_model import CountsModel
+
+
+def _count_sel(local, lid, vis, vid, metric, scope, seleccion, linea):
+    s = _bb_sel(local, lid, vis, vid, "count", seleccion, linea)
+    s.metric = metric
+    s.scope = scope
+    return s
+
+
+_COUNTS = CountsModel.from_params({
+    "shots": {"base_home": 13.0, "base_away": 11.0, "factor_neutral": 1.0,
+              "disp": 1.6, "atk": {}, "def": {}},
+})
+
+
+def test_count_leg_baja_n_exoticas():
+    parlay = ValidatedParlay(
+        selecciones=[
+            _bb_sel("Colombia", "C1", "Uzbekistan", "U1", "1X2", "home"),
+            _count_sel("Colombia", "C1", "Uzbekistan", "U1", "shots", "total", "over", 22.5),
+        ],
+        cuota_total=5.0, casa_apuestas="bet365", es_bet_builder=True,
+    )
+    res = betbuilder.analyze_bet_builder(parlay, 1.6, 1.1, -0.05, "intl_v0.1", 0.05,
+                                         counts_model=_COUNTS, neutral=True)
+    # la pata de tiros es modelable -> 0 exóticas, 2 modelables
+    assert res.n_exoticas == 0
+    assert res.n_modelables == 2
+    assert res.prob_estimada is not None
+
+
+def test_count_sin_modelo_cuenta_exotica():
+    parlay = ValidatedParlay(
+        selecciones=[
+            _count_sel("Colombia", "C1", "Uzbekistan", "U1", "cards", "total", "over", 3.5),
+        ],
+        cuota_total=5.0, casa_apuestas="bet365", es_bet_builder=True,
+    )
+    # _COUNTS no tiene 'cards' -> esa métrica no está gateada -> exótica
+    res = betbuilder.analyze_bet_builder(parlay, 1.6, 1.1, -0.05, "intl_v0.1", 0.05,
+                                         counts_model=_COUNTS, neutral=True)
+    assert res.n_exoticas == 1
+    assert res.n_modelables == 0

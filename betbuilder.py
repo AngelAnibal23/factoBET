@@ -16,6 +16,18 @@ KELLY_FRACTION = 0.20
 # Mercados que la familia "goles" puede valorar desde la matriz de marcadores.
 GOAL_MARKETS = {"1X2", "over_under", "btts", "handicap", "resultado_exacto"}
 
+COUNT_MARKET = "count"   # mercado genérico de conteos (metric + scope en la selección)
+
+
+def count_leg_prob(model, sel, home, away, neutral) -> float | None:
+    """Marginal de una pata count vía NegBin/Poisson. None si la métrica no está
+    gateada en el modelo de esta liga (entonces la pata es exótica)."""
+    if model is None or not sel.metric or not model.tiene(sel.metric):
+        return None
+    return model.prob_over_under(
+        sel.metric, sel.scope, sel.seleccion, sel.linea, home, away, neutral
+    )
+
 
 def scoreline_matrix(lh: float, la: float, rho: float) -> np.ndarray:
     """P(local=i, visitante=j) para i,j en {0..MAX_GOALS}, normalizada a suma 1.
@@ -92,20 +104,27 @@ def _fractional_kelly(prob: float, cuota: float):
     return round(full * KELLY_FRACTION, 4)
 
 
-def verdict(ceiling, cuota_total, n_modelables: int, n_exoticas: int):
+def verdict(ceiling, cuota_total, n_modelables: int, n_exoticas: int,
+            techo_exacto: bool = True):
     """Devuelve (veredicto, kelly_fraccion).
 
     SIN_VALOR     : ceiling <= 1/cuota -> EV<=0 garantizado (prob_real <= ceiling).
-    NO_CONCLUYENTE: ceiling > 1/cuota con patas exóticas (techo = cota superior).
-    VALOR         : ceiling > 1/cuota sin exóticas (ceiling = prob real) + Kelly.
+    NO_CONCLUYENTE: ceiling > 1/cuota con patas exóticas, O con familias mezcladas
+                    (el techo es cota superior, no la prob real exacta).
+    VALOR         : ceiling > 1/cuota, sin exóticas Y techo exacto (una sola familia,
+                    ceiling = prob real) + Kelly.
     NO_EVALUABLE  : ninguna pata modelable.
+
+    techo_exacto: True si el techo es la conjunta EXACTA (una sola familia presente).
+    Con familias mezcladas (goles + conteos, o varias métricas) el techo es un min
+    entre familias = cota superior, así que NO se puede afirmar VALOR.
     """
     if n_modelables == 0:
         return "NO_EVALUABLE", None
     p = 1.0 / cuota_total
     if ceiling <= p:
         return "SIN_VALOR", None
-    if n_exoticas == 0:
+    if n_exoticas == 0 and techo_exacto:
         return "VALOR", _fractional_kelly(ceiling, cuota_total)
     return "NO_CONCLUYENTE", None
 
@@ -129,10 +148,12 @@ class BetBuilderSinCuotaError(ValueError):
     """Bet builder sin cuota_total: no se puede formar el veredicto."""
 
 
-def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float):
+def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
+                        counts_model=None, neutral: bool = False):
     """Ensambla el análisis de un bet builder en un ParlayAnalysis.
 
     lh/la/rho: del partido (lh None si los equipos no están en el modelo).
+    counts_model: CountsModel de la liga (None si no hay). neutral: sede neutral.
     Import local de analyzer para evitar ciclo de import a nivel de módulo.
     """
     from analyzer import SelectionAnalysis, ParlayAnalysis
@@ -143,24 +164,36 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float)
     covered = lh is not None
     matrix = scoreline_matrix(lh, la, rho) if covered else None
 
+    # Nombres del partido para el modelo de conteos (mismas selecciones, un partido).
+    match_sel = next((s for s in parlay.selecciones if s.visitante_match), None)
+    c_home = match_sel.local_match.canonical if match_sel else None
+    c_away = match_sel.visitante_match.canonical if match_sel else None
+
     analyses = []
     goal_legs = []
+    count_marginals = []
     exoticas_desc = []
     for sel in parlay.selecciones:
         is_goal = sel.mercado in GOAL_MARKETS
-        modelable = covered and is_goal
-        if modelable:
+        is_count = sel.mercado == COUNT_MARKET
+        count_p = count_leg_prob(counts_model, sel, c_home, c_away, neutral) if is_count else None
+
+        if is_goal and covered:
             leg = (sel.mercado, sel.seleccion, sel.linea)
             prob_mod = round(marginal_prob(matrix, leg), 6)
             goal_legs.append(leg)
             nivel_cov, alertas = "ALTA", []
-        elif not is_goal:
+        elif is_count and count_p is not None:
+            prob_mod = round(count_p, 6)
+            count_marginals.append(count_p)
+            nivel_cov, alertas = "MEDIA", ["Mercado de conteo: marginal NegBin con shrinkage."]
+        elif is_goal:  # goles pero sin cobertura de equipos
+            prob_mod = None
+            nivel_cov, alertas = "BAJA", ["Equipos sin datos en el modelo: no se puede calcular probabilidad."]
+        else:
             prob_mod = None
             exoticas_desc.append(sel.seleccion)
             nivel_cov, alertas = "NULA", ["Mercado exótico: el modelo no puede validar esta selección."]
-        else:  # goles pero sin cobertura de equipos
-            prob_mod = None
-            nivel_cov, alertas = "BAJA", ["Equipos sin datos en el modelo: no se puede calcular probabilidad."]
 
         analyses.append(SelectionAnalysis(
             equipo_local=sel.local_match.canonical,
@@ -178,11 +211,27 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float)
             n_partidos_local=0, n_partidos_visitante=0, alertas=alertas,
         ))
 
-    n_modelables = len(goal_legs)
+    n_modelables = len(goal_legs) + len(count_marginals)
     n_exoticas = len(parlay.selecciones) - n_modelables
-    ceiling = joint_ceiling(matrix, goal_legs) if (covered and n_modelables > 0) else None
 
-    vered, kelly = verdict(ceiling, parlay.cuota_total, n_modelables, n_exoticas)
+    joint_goles = joint_ceiling(matrix, goal_legs) if (covered and goal_legs) else None
+    # cada familia aporta una "parte" al techo: goles (conjunta exacta) + cada marginal count
+    partes_techo = ([joint_goles] if joint_goles is not None else []) + count_marginals
+    ceiling = min(partes_techo) if partes_techo else None
+    techo_exacto = len(partes_techo) == 1   # exacto solo si una sola familia/parte aporta
+
+    # estimado por independencia: producto de las familias (goles exacto × Π count)
+    if partes_techo:
+        prob_estimada = 1.0
+        if joint_goles is not None:
+            prob_estimada *= joint_goles
+        for pcount in count_marginals:
+            prob_estimada *= pcount
+        prob_estimada = round(prob_estimada, 6)
+    else:
+        prob_estimada = None
+
+    vered, kelly = verdict(ceiling, parlay.cuota_total, n_modelables, n_exoticas, techo_exacto)
     nivel_conf, razones = bb_confidence(vered, n_modelables, n_exoticas)
     p_impl = round(1.0 / parlay.cuota_total, 6)
 
@@ -206,6 +255,7 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float)
         version_modelo=version_modelo, margen_aplicado=margin,
         es_bet_builder=True, veredicto=vered,
         prob_techo=round(ceiling, 6) if ceiling is not None else None,
+        prob_estimada=prob_estimada,
         prob_impl_combinada=p_impl, n_modelables=n_modelables, n_exoticas=n_exoticas,
         bet_builder_kelly=kelly, exoticas_desc=exoticas_desc,
         marcadores_partido=marcadores,

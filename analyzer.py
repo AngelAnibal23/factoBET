@@ -119,6 +119,7 @@ class ParlayAnalysis:
     es_bet_builder:       bool = False
     veredicto:            Optional[str] = None    # SIN_VALOR|NO_CONCLUYENTE|VALOR|NO_EVALUABLE
     prob_techo:           Optional[float] = None
+    prob_estimada:        Optional[float] = None   # estimado por independencia (familias mezcladas)
     prob_impl_combinada:  Optional[float] = None
     n_modelables:         int = 0
     n_exoticas:           int = 0
