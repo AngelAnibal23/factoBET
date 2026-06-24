@@ -26,6 +26,7 @@ create table if not exists eventos_jugador_flashscore (
   player_nombre text,
   tipo text not null,
   fue_titular boolean,
+  cantidad int not null default 1,
   unique (event_id, player_id, tipo)
 );
 """
@@ -49,15 +50,22 @@ def main():
             break
         desde += paso
 
-    filas = []
+    # agrega por (event_id, player_id, tipo): un jugador puede anotar/asistir 2+ veces
+    # en un partido -> cantidad>1 (necesario para "anota 2+" y para el reparto de goles).
+    agg = {}
     with open("player_events.csv", encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            filas.append({
-                "event_id": r["event_id"],
-                "equipo_id": nombre_equipo.get((r["event_id"], r["equipo"])),
-                "player_id": r["player_id"], "player_nombre": r["nombre"],
-                "tipo": r["tipo"], "fue_titular": r["fue_titular"] == "True",
-            })
+            k = (r["event_id"], r["player_id"], r["tipo"])
+            if k not in agg:
+                agg[k] = {"nombre": r["nombre"], "equipo": r["equipo"],
+                          "fue_titular": r["fue_titular"] == "True", "cantidad": 0}
+            agg[k]["cantidad"] += 1
+    filas = [{
+        "event_id": e,
+        "equipo_id": nombre_equipo.get((e, v["equipo"])),
+        "player_id": p, "player_nombre": v["nombre"],
+        "tipo": t, "fue_titular": v["fue_titular"], "cantidad": v["cantidad"],
+    } for (e, p, t), v in agg.items()]
     for i in range(0, len(filas), 500):
         sb.table("eventos_jugador_flashscore").upsert(
             filas[i:i + 500], on_conflict="event_id,player_id,tipo").execute()

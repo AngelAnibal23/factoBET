@@ -100,15 +100,18 @@ def _cargar(sb):
     desde = 0
     while True:
         chunk = (sb.table("eventos_jugador_flashscore")
-                 .select("event_id,equipo_id,player_id,player_nombre,tipo,fue_titular")
+                 .select("event_id,equipo_id,player_id,player_nombre,tipo,fue_titular,cantidad")
                  .range(desde, desde + paso - 1).execute().data)
         for r in chunk:
             equipo = eq.get(r["equipo_id"])
             if equipo is None:
                 continue
-            eventos.append({"event_id": r["event_id"], "equipo": equipo,
-                            "player_id": r["player_id"], "player_nombre": r["player_nombre"],
-                            "tipo": r["tipo"], "fue_titular": r["fue_titular"]})
+            # cantidad>1 = el jugador repitio el evento (doblete/doble asistencia):
+            # se expande a 1 evento por ocurrencia para que el conteo aguas abajo cuadre.
+            for _ in range(r.get("cantidad") or 1):
+                eventos.append({"event_id": r["event_id"], "equipo": equipo,
+                                "player_id": r["player_id"], "player_nombre": r["player_nombre"],
+                                "tipo": r["tipo"], "fue_titular": r["fue_titular"]})
             if r["fue_titular"]:
                 titulares[(r["event_id"], equipo)][r["player_id"]] = r["player_nombre"]
         if len(chunk) < paso:

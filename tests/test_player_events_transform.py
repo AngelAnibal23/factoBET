@@ -39,6 +39,28 @@ def test_parse_eventos_extrae_goles_y_asistencias():
     assert any(e["tipo"] == "Yellow Card" for e in evs)
 
 
+# La mitad/seccion va en registros-cabecera (AC sin IK). Los penales de la seccion
+# "Penalties" son de tanda (sin INX) y NO deben contar como gol del jugador.
+SUI_TANDA = (
+    "AC÷2nd Half~"
+    "IK÷Goal¬IF÷Real Scorer¬IM÷pG¬IA÷1¬IB÷70'~"
+    "AC÷Extra Time~"
+    "IK÷Penalty¬IF÷ET Penalty¬IM÷pE¬IA÷1¬IB÷109'~"
+    "AC÷Penalties~"
+    "IK÷Penalty¬IF÷Shootout A¬IM÷pS1¬IA÷1¬IB÷1~"
+    "IK÷Penalty¬IF÷Shootout B¬IM÷pS2¬IA÷2¬IB÷1"
+)
+
+
+def test_parse_eventos_excluye_tanda_de_penales():
+    evs = parse_eventos(SUI_TANDA)
+    ids = {e["player_id"] for e in evs}
+    assert "pG" in ids                 # gol en juego cuenta
+    assert "pE" in ids                 # penal en Extra Time (con INX) cuenta
+    assert "pS1" not in ids and "pS2" not in ids   # penales de tanda excluidos
+    assert next(e for e in evs if e["player_id"] == "pG")["mitad"] == "2nd Half"
+
+
 def test_parse_titulares_marca_solo_starters():
     tit = parse_titulares(LI)
     assert tit["p1"] is True and tit["p2"] is True and tit["p3"] is True

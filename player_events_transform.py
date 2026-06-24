@@ -20,11 +20,24 @@ def _registros(blob: str):
         yield campos
 
 
+SHOOTOUT = "Penalties"   # seccion de tanda de penales; sus penales NO son "el jugador anota"
+
+
 def parse_eventos(blob: str) -> list[dict]:
-    """Eventos del df_sui_1: tipo (IK), jugador (IF/IM), lado (IA), minuto (IB)."""
+    """Eventos del df_sui_1: tipo (IK), jugador (IF/IM), lado (IA), minuto (IB).
+
+    La mitad/seccion viene en registros-cabecera (AC sin IK: 1st Half, 2nd Half,
+    Extra Time, Penalties). Se rastrea el estado y se EXCLUYE la seccion "Penalties"
+    (tanda): esos penales no cuentan en el marcador (sin INX) ni como gol del jugador."""
     evs = []
+    seccion = ""
     for c in _registros(blob):
+        if "AC" in c and "IK" not in c:   # cabecera de seccion
+            seccion = c["AC"]
+            continue
         if "IK" not in c or "IM" not in c:
+            continue
+        if seccion == SHOOTOUT:           # tanda de penales -> fuera
             continue
         evs.append({
             "tipo": c.get("IK", ""),
@@ -32,7 +45,7 @@ def parse_eventos(blob: str) -> list[dict]:
             "nombre": c.get("IF", ""),
             "lado": int(c["IA"]) if c.get("IA", "").isdigit() else None,
             "minuto": c.get("IB", ""),
-            "mitad": c.get("AC", ""),
+            "mitad": seccion,
         })
     return evs
 
