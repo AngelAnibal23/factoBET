@@ -13,9 +13,9 @@ Emite DOS tipos de fila por partido:
     para incluir a los titulares que NO anotaron (denominador del reparto).
   - tipo=evento (Goal/Assistance/Yellow Card/...): una por incidencia del df_sui_1.
 
-OJO (verificar al correr): el marcador de titular se asume en la clave `ST` del
-df_li_1 (ST==1 => titular). Si el feed real usa otra clave, ajustar parse_lineup/
-parse_titulares en player_events_transform.py (y su test) en el mismo commit.
+Esquema verificado contra el feed real (2026-06-24): en df_li_1 el titular es LK==1
+(suplente LK==2), el equipo es el nombre en LQ (= estadisticas_flashscore.equipo_flashscore)
+y los técnicos van en la sección LB÷Coaches (excluidos). Ver player_events_transform.py.
 """
 
 import csv
@@ -54,18 +54,18 @@ def bajar_partido(eid: str) -> list[dict]:
     eventos = parse_eventos(_feed(f"df_sui_1_{eid}"))
     lineup = parse_lineup(_feed(f"df_li_1_{eid}"))
     titular = {f["player_id"]: f["fue_titular"] for f in lineup}
-    lado_lin = {f["player_id"]: f["lado"] for f in lineup}
+    equipo_lin = {f["player_id"]: f["equipo"] for f in lineup}   # player_id -> nombre equipo
     filas = []
     for f in lineup:   # filas de alineación (todos los titulares/suplentes listados)
         filas.append({
             "event_id": eid, "player_id": f["player_id"], "nombre": f["nombre"],
-            "tipo": "Lineup", "lado": f["lado"], "fue_titular": f["fue_titular"],
+            "tipo": "Lineup", "equipo": f["equipo"], "fue_titular": f["fue_titular"],
         })
     for e in eventos:  # filas de incidencias (goles/asistencias/tarjetas/...)
         filas.append({
             "event_id": eid, "player_id": e["player_id"], "nombre": e["nombre"],
             "tipo": e["tipo"],
-            "lado": e["lado"] if e["lado"] is not None else lado_lin.get(e["player_id"]),
+            "equipo": equipo_lin.get(e["player_id"], ""),   # equipo por nombre desde el lineup
             "fue_titular": titular.get(e["player_id"], False),
         })
     return filas
@@ -86,7 +86,7 @@ def main():
         time.sleep(0.2)   # cortesía con el feed
     with open(SALIDA, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["event_id", "player_id", "nombre",
-                                          "tipo", "lado", "fue_titular"])
+                                          "tipo", "equipo", "fue_titular"])
         w.writeheader()
         w.writerows(todos)
     print(f"✅ {len(todos)} filas -> {SALIDA}")

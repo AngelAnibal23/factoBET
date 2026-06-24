@@ -38,11 +38,12 @@ def registros_desde_eventos(eventos: list[dict], titulares: dict) -> list[dict]:
     for e in eventos:
         key = (e["event_id"], e["player_id"])
         nombre_de[key] = e["player_nombre"]
-        if e["tipo"] == "Goal":
+        if e["tipo"] in ("Goal", "Penalty"):   # penal convertido = el jugador anota
             g[key] += 1
             goles_eq[(e["event_id"], e["equipo"])] += 1
         elif e["tipo"] == "Assistance":
             a[key] += 1
+        # "Own goal" se ignora: no acredita al que lo metió ni a su equipo
 
     regs = []
     for (eid, equipo), starters in titulares.items():

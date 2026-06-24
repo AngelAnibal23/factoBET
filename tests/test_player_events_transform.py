@@ -1,18 +1,30 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from player_events_transform import parse_eventos, parse_titulares
+from player_events_transform import parse_eventos, parse_titulares, parse_lineup
 
+# df_sui_1 (incidencias) — esquema real: IK=tipo, IF=nombre, IM=player_id, IA=lado.
 SUI = (
     "IK÷Goal¬IF÷Cristiano Ronaldo¬IM÷p1¬IA÷1¬IB÷23'¬AC÷1st Half~"
     "IK÷Assistance¬IF÷Bruno Fernandes¬IM÷p2¬IA÷1¬IB÷23'¬AC÷1st Half~"
     "IK÷Yellow Card¬IF÷Pepe¬IM÷p9¬IA÷1¬IB÷70'¬AC÷2nd Half"
 )
 
+# df_li_1 (alineaciones) — esquema REAL de Flashscore:
+#   secciones por header LB (Starting Lineups / Substitutes / Coaches),
+#   LP=player_id, LI=nombre, LQ=equipo (nombre), LK=1 titular / LK=2 suplente.
+#   Un registro vacío separa a los dos equipos dentro de cada sección.
+#   Los técnicos (sección Coaches) traen LP y LK pero NO son jugadores -> excluir.
 LI = (
-    "LP÷p1¬LI÷Cristiano Ronaldo¬LH÷FW¬IA÷1¬ST÷1~"
-    "LP÷p2¬LI÷Bruno Fernandes¬LH÷MF¬IA÷1¬ST÷1~"
-    "LP÷p3¬LI÷Suplente¬LH÷FW¬IA÷1¬ST÷0"
+    "LB÷Starting Lineups~"
+    "LP÷p1¬LI÷Cristiano Ronaldo¬LQ÷Portugal¬LK÷1¬LL÷9~"
+    "LP÷p2¬LI÷Bruno Fernandes¬LQ÷Portugal¬LK÷1¬LL÷8~"
+    "~"
+    "LP÷p3¬LI÷Rival Striker¬LQ÷Spain¬LK÷1¬LL÷9~"
+    "LB÷Substitutes~"
+    "LP÷p4¬LI÷Suplente¬LQ÷Portugal¬LK÷2~"
+    "LB÷Coaches~"
+    "LP÷c1¬LI÷Roberto Martinez¬LK÷1"
 )
 
 
@@ -29,14 +41,16 @@ def test_parse_eventos_extrae_goles_y_asistencias():
 
 def test_parse_titulares_marca_solo_starters():
     tit = parse_titulares(LI)
-    assert tit["p1"] is True and tit["p2"] is True
-    assert tit["p3"] is False
+    assert tit["p1"] is True and tit["p2"] is True and tit["p3"] is True
+    assert tit["p4"] is False           # suplente (LK=2)
+    assert "c1" not in tit              # técnico excluido
 
 
-def test_parse_lineup_trae_lado_y_nombre():
-    from player_events_transform import parse_lineup
+def test_parse_lineup_trae_equipo_y_titular():
     filas = parse_lineup(LI)
     by = {f["player_id"]: f for f in filas}
     assert by["p1"]["nombre"] == "Cristiano Ronaldo"
-    assert by["p1"]["lado"] == 1 and by["p1"]["fue_titular"] is True
-    assert by["p3"]["fue_titular"] is False   # suplente
+    assert by["p1"]["equipo"] == "Portugal" and by["p1"]["fue_titular"] is True
+    assert by["p3"]["equipo"] == "Spain"
+    assert by["p4"]["fue_titular"] is False       # suplente
+    assert "c1" not in by                         # técnico excluido

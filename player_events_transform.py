@@ -37,30 +37,37 @@ def parse_eventos(blob: str) -> list[dict]:
     return evs
 
 
-def parse_titulares(blob: str) -> dict:
-    """df_li_1: {player_id: fue_titular}. Titular si ST==1."""
-    out = {}
+def _jugadores(blob: str):
+    """Itera (campos, es_titular) por cada JUGADOR del df_li_1, ya excluyendo técnicos.
+
+    El feed se divide en secciones por un header `LB` (Starting Lineups / Substitutes /
+    Coaches). Los registros de jugador traen LP (player_id), LI (nombre), LQ (equipo) y
+    LK (1=titular, 2=suplente). Los técnicos (sección Coaches) también traen LP/LK, así
+    que se filtran por sección, no por presencia de claves."""
+    seccion = ""
     for c in _registros(blob):
-        if "LP" not in c:
+        if "LB" in c:
+            seccion = c["LB"]
             continue
-        out[c["LP"]] = c.get("ST", "0") == "1"
-    return out
+        if "LP" not in c or seccion == "Coaches":
+            continue
+        yield c, c.get("LK") == "1"
+
+
+def parse_titulares(blob: str) -> dict:
+    """df_li_1: {player_id: fue_titular}. Titular si LK==1; técnicos excluidos."""
+    return {c["LP"]: titular for c, titular in _jugadores(blob)}
 
 
 def parse_lineup(blob: str) -> list[dict]:
-    """df_li_1 enriquecido: una fila por jugador del once/banca con su lado y nombre.
+    """df_li_1 enriquecido: una fila por jugador del once/banca con su equipo y nombre.
 
-    Devuelve [{player_id (LP), nombre (LI), lado (IA int o None), fue_titular (ST==1)}].
+    Devuelve [{player_id (LP), nombre (LI), equipo (LQ), fue_titular (LK==1)}].
     Necesario para incluir a los titulares que NO anotaron (denominador del reparto)
-    y para resolver su equipo por (event_id, lado)."""
-    out = []
-    for c in _registros(blob):
-        if "LP" not in c:
-            continue
-        out.append({
-            "player_id": c["LP"],
-            "nombre": c.get("LI", ""),
-            "lado": int(c["IA"]) if c.get("IA", "").isdigit() else None,
-            "fue_titular": c.get("ST", "0") == "1",
-        })
-    return out
+    y para resolver su equipo por nombre contra estadisticas_flashscore.equipo_flashscore."""
+    return [{
+        "player_id": c["LP"],
+        "nombre": c.get("LI", ""),
+        "equipo": c.get("LQ", ""),
+        "fue_titular": titular,
+    } for c, titular in _jugadores(blob)]

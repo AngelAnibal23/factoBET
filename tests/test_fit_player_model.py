@@ -29,3 +29,26 @@ def test_registros_cuenta_goles_y_titulares():
     # p3 fue titular pero no anotó -> registro con 0 goles (entra al reparto)
     assert by[("A", "p3")]["goles_jugador"] == 0
     assert by[("A", "p3")]["goles_equipo"] == 2
+
+
+# Flashscore etiqueta el penal convertido como tipo "Penalty" y el autogol como
+# "Own goal" (codigos IE 10/4 vs 3 del gol normal). El penal SI es "el jugador anota"
+# (las estrellas patean penales = los jugadores que la casa ofrece); el autogol NO.
+EVENTOS_PEN = [
+    {"event_id": "B", "equipo": "ESP", "player_id": "q1", "player_nombre": "Pen",
+     "tipo": "Penalty", "fue_titular": True},
+    {"event_id": "B", "equipo": "ESP", "player_id": "q2", "player_nombre": "Og",
+     "tipo": "Own goal", "fue_titular": True},
+]
+TITULARES_PEN = {("B", "ESP"): {"q1": "Pen", "q2": "Og"}}
+
+
+def test_penal_cuenta_autogol_no():
+    regs = registros_desde_eventos(EVENTOS_PEN, TITULARES_PEN)
+    by = {(r["event_id"], r["player_id"]): r for r in regs}
+    # el penal convertido cuenta como gol del jugador y del equipo
+    assert by[("B", "q1")]["goles_jugador"] == 1
+    # el autogol NO se le acredita al que lo metió
+    assert by[("B", "q2")]["goles_jugador"] == 0
+    # solo el penal entra al total del equipo (autogol fuera)
+    assert by[("B", "q1")]["goles_equipo"] == 1

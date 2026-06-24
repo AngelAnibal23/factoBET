@@ -1,8 +1,9 @@
 # load_player_events_to_supabase.py
 """Crea/puebla eventos_jugador_flashscore desde player_events.csv.
 
-Resuelve equipo_id por (event_id, lado) contra estadisticas_flashscore (que ya tiene
-event_id, es_local y equipo_id resueltos). Idempotente por (event_id, player_id, tipo).
+Resuelve equipo_id por (event_id, nombre_equipo) contra estadisticas_flashscore (que ya
+tiene event_id, equipo_flashscore y equipo_id resueltos; el nombre viene del lineup LQ y
+coincide exacto con equipo_flashscore). Idempotente por (event_id, player_id, tipo).
 
     python load_player_events_to_supabase.py
 
@@ -36,15 +37,14 @@ def main():
     sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
     print("Si la tabla no existe, ejecuta este DDL en el SQL editor de Supabase:\n", DDL)
 
-    # mapa (event_id, lado) -> equipo_id desde estadisticas_flashscore (lado 1=local, 2=visitante)
-    lado_equipo, desde, paso = {}, 0, 1000
+    # mapa (event_id, nombre_equipo) -> equipo_id desde estadisticas_flashscore
+    nombre_equipo, desde, paso = {}, 0, 1000
     while True:
         chunk = (sb.table("estadisticas_flashscore")
-                 .select("event_id,es_local,equipo_id")
+                 .select("event_id,equipo_flashscore,equipo_id")
                  .range(desde, desde + paso - 1).execute().data)
         for r in chunk:
-            lado = 1 if r["es_local"] else 2
-            lado_equipo[(r["event_id"], lado)] = r["equipo_id"]
+            nombre_equipo[(r["event_id"], r["equipo_flashscore"])] = r["equipo_id"]
         if len(chunk) < paso:
             break
         desde += paso
@@ -52,10 +52,9 @@ def main():
     filas = []
     with open("player_events.csv", encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            lado = int(r["lado"]) if r["lado"] not in ("", "None") else None
             filas.append({
                 "event_id": r["event_id"],
-                "equipo_id": lado_equipo.get((r["event_id"], lado)),
+                "equipo_id": nombre_equipo.get((r["event_id"], r["equipo"])),
                 "player_id": r["player_id"], "player_nombre": r["nombre"],
                 "tipo": r["tipo"], "fue_titular": r["fue_titular"] == "True",
             })
