@@ -83,7 +83,8 @@ def _gate(train, test, metrica):
 def _cargar(sb):
     """Eventos (con equipo canónico), titulares por (event,equipo), y fecha por event."""
     # equipo_id -> nombre canónico
-    eq = {e["id"]: e["nombre"] for e in sb.table("equipos").select("id,nombre").execute().data}
+    eq = {e["id"]: e["nombre_oficial"]
+          for e in sb.table("equipos").select("id,nombre_oficial").execute().data}
     # fecha por event_id
     fecha_ev = {}
     desde, paso = 0, 1000
