@@ -26,3 +26,14 @@ def test_prompt_documenta_mercado_count():
     # las 4 métricas nombradas
     for kw in ("corners", "cards", "shots", "sot"):
         assert kw in SYSTEM_PROMPT
+
+
+# append to tests/test_ocr_prompt.py
+from ocr import SYSTEM_PROMPT
+
+
+def test_prompt_define_mercado_player_y_faltante():
+    p = SYSTEM_PROMPT
+    assert "player" in p
+    assert "goal_or_assist" in p and "assist" in p
+    assert "faltante" in p
