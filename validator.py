@@ -41,7 +41,7 @@ VALID_ODDS = {
 }
 DEFAULT_ODDS_RANGE = (1.05, 200.0)
 
-VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "exotic"}
+VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "exotic", "count", "player"}
 VALID_SEL_1X2   = {"home", "draw", "away"}
 VALID_SEL_OU    = {"over", "under"}
 VALID_SEL_BTTS  = {"yes", "no"}
@@ -97,6 +97,11 @@ class ValidatedSelection:
     # Mercado de conteo (familia "count"): métrica + scope. None para otros mercados.
     metric:                Optional[str] = None   # corners|cards|shots|sot
     scope:                 Optional[str] = None   # total|home|away
+    # Mercado por-jugador (familia "player"): nombre + métrica + umbral. faltante=True
+    # para mercados conocidos pero aún no modelables (p.ej. tiros al arco por jugador).
+    player:                Optional[str] = None   # nombre tal cual el boleto
+    umbral:                int = 1                 # X+ eventos (default 1)
+    faltante:              bool = False
 
 
 @dataclass
@@ -372,6 +377,9 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
             mercado_exotico      = s["mercado"] == "exotic",
             metric               = s.get("metric"),
             scope                = s.get("scope"),
+            player               = s.get("player"),
+            umbral               = int(s.get("umbral") or 1),
+            faltante             = bool(s.get("faltante", False)),
         ))
 
     return ValidatedParlay(
