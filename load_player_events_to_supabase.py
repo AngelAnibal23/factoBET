@@ -1,9 +1,9 @@
 # load_player_events_to_supabase.py
 """Crea/puebla eventos_jugador_flashscore desde player_events.csv.
 
-Resuelve equipo_id por (event_id, nombre_equipo) contra estadisticas_flashscore (que ya
-tiene event_id, equipo_flashscore y equipo_id resueltos; el nombre viene del lineup LQ y
-coincide exacto con equipo_flashscore). Idempotente por (event_id, player_id, tipo).
+Resuelve equipo_id por (event_id, lado) contra estadisticas_flashscore (que ya tiene
+event_id, es_local y equipo_id resueltos; lado 1=local, 2=visitante, derivado del bloque
+LC del lineup). Idempotente por (event_id, player_id, tipo).
 
     python load_player_events_to_supabase.py
 
@@ -38,14 +38,14 @@ def main():
     sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
     print("Si la tabla no existe, ejecuta este DDL en el SQL editor de Supabase:\n", DDL)
 
-    # mapa (event_id, nombre_equipo) -> equipo_id desde estadisticas_flashscore
-    nombre_equipo, desde, paso = {}, 0, 1000
+    # mapa (event_id, lado) -> equipo_id desde estadisticas_flashscore (1=local, 2=visitante)
+    lado_equipo, desde, paso = {}, 0, 1000
     while True:
         chunk = (sb.table("estadisticas_flashscore")
-                 .select("event_id,equipo_flashscore,equipo_id")
+                 .select("event_id,es_local,equipo_id")
                  .range(desde, desde + paso - 1).execute().data)
         for r in chunk:
-            nombre_equipo[(r["event_id"], r["equipo_flashscore"])] = r["equipo_id"]
+            lado_equipo[(r["event_id"], 1 if r["es_local"] else 2)] = r["equipo_id"]
         if len(chunk) < paso:
             break
         desde += paso
@@ -57,12 +57,13 @@ def main():
         for r in csv.DictReader(f):
             k = (r["event_id"], r["player_id"], r["tipo"])
             if k not in agg:
-                agg[k] = {"nombre": r["nombre"], "equipo": r["equipo"],
+                lado = int(r["lado"]) if r["lado"] not in ("", "None") else None
+                agg[k] = {"nombre": r["nombre"], "lado": lado,
                           "fue_titular": r["fue_titular"] == "True", "cantidad": 0}
             agg[k]["cantidad"] += 1
     filas = [{
         "event_id": e,
-        "equipo_id": nombre_equipo.get((e, v["equipo"])),
+        "equipo_id": lado_equipo.get((e, v["lado"])),
         "player_id": p, "player_nombre": v["nombre"],
         "tipo": t, "fue_titular": v["fue_titular"], "cantidad": v["cantidad"],
     } for (e, p, t), v in agg.items()]

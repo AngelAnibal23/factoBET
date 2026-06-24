@@ -11,19 +11,19 @@ SUI = (
 )
 
 # df_li_1 (alineaciones) — esquema REAL de Flashscore:
-#   secciones por header LB (Starting Lineups / Substitutes / Coaches),
-#   LP=player_id, LI=nombre, LQ=equipo (nombre), LK=1 titular / LK=2 suplente.
-#   Un registro vacío separa a los dos equipos dentro de cada sección.
+#   secciones por header LB (Starting Lineups / Substitutes / Coaches), y dentro de
+#   cada sección dos bloques por LC (1=local, 2=visitante). LP=player_id, LI=nombre,
+#   LK=1 titular / LK=2 suplente. LQ NO es el equipo (es nacionalidad en clubes).
 #   Los técnicos (sección Coaches) traen LP y LK pero NO son jugadores -> excluir.
 LI = (
-    "LB÷Starting Lineups~"
-    "LP÷p1¬LI÷Cristiano Ronaldo¬LQ÷Portugal¬LK÷1¬LL÷9~"
-    "LP÷p2¬LI÷Bruno Fernandes¬LQ÷Portugal¬LK÷1¬LL÷8~"
-    "~"
-    "LP÷p3¬LI÷Rival Striker¬LQ÷Spain¬LK÷1¬LL÷9~"
-    "LB÷Substitutes~"
-    "LP÷p4¬LI÷Suplente¬LQ÷Portugal¬LK÷2~"
-    "LB÷Coaches~"
+    "LB÷Starting Lineups¬LC÷1~"
+    "LP÷p1¬LI÷Cristiano Ronaldo¬LK÷1¬LL÷9~"
+    "LP÷p2¬LI÷Bruno Fernandes¬LK÷1¬LL÷8~"
+    "LC÷2~"
+    "LP÷p3¬LI÷Rival Striker¬LK÷1¬LL÷9~"
+    "LB÷Substitutes¬LC÷1~"
+    "LP÷p4¬LI÷Suplente¬LK÷2~"
+    "LB÷Coaches¬LC÷1~"
     "LP÷c1¬LI÷Roberto Martinez¬LK÷1"
 )
 
@@ -68,11 +68,11 @@ def test_parse_titulares_marca_solo_starters():
     assert "c1" not in tit              # técnico excluido
 
 
-def test_parse_lineup_trae_equipo_y_titular():
+def test_parse_lineup_trae_lado_y_titular():
     filas = parse_lineup(LI)
     by = {f["player_id"]: f for f in filas}
     assert by["p1"]["nombre"] == "Cristiano Ronaldo"
-    assert by["p1"]["equipo"] == "Portugal" and by["p1"]["fue_titular"] is True
-    assert by["p3"]["equipo"] == "Spain"
-    assert by["p4"]["fue_titular"] is False       # suplente
-    assert "c1" not in by                         # técnico excluido
+    assert by["p1"]["lado"] == 1 and by["p1"]["fue_titular"] is True   # bloque LC=1 (local)
+    assert by["p3"]["lado"] == 2                                       # bloque LC=2 (visitante)
+    assert by["p4"]["lado"] == 1 and by["p4"]["fue_titular"] is False  # suplente local
+    assert "c1" not in by                                              # técnico excluido
