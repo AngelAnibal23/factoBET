@@ -37,3 +37,27 @@ def test_shrinkage_acerca_al_prior_con_pocos_datos():
     fuerte = estimar_cuotas(REGISTROS, k=50.0)
     prior = 1.0 / 11
     assert abs(fuerte["p3"]["cuota_gol"] - prior) < abs(flojo["p3"]["cuota_gol"] - prior)
+
+
+def test_no_revienta_con_n_titulares_cero():
+    # n_titulares == 0 no debe provocar ZeroDivisionError al calcular el prior.
+    regs = [
+        {"player_id": "px", "nombre": "X", "equipo": "Y",
+         "goles_jugador": 1, "asist_jugador": 0, "goles_equipo": 2, "n_titulares": 0},
+    ]
+    out = estimar_cuotas(regs, k=2.0)
+    assert "px" in out
+    assert 0.0 <= out["px"]["cuota_gol"] <= 1.0
+
+
+def test_k_cero_sin_goles_cae_al_prior():
+    # Jugador cuyos partidos tienen goles_equipo==0 (shares vacios) y k==0:
+    # denom == 0 no debe reventar; cae al prior.
+    regs = [
+        {"player_id": "pz", "nombre": "Z", "equipo": "W",
+         "goles_jugador": 0, "asist_jugador": 0, "goles_equipo": 0, "n_titulares": 11},
+    ]
+    out = estimar_cuotas(regs, k=0.0)
+    prior = 1.0 / 11
+    assert abs(out["pz"]["cuota_gol"] - prior) < 1e-9
+    assert abs(out["pz"]["cuota_asist"] - prior) < 1e-9
