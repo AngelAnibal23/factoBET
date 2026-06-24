@@ -94,9 +94,10 @@ class ValidatedSelection:
     # Derived
     prob_implicita:        Optional[float]   # None en bet builder
     mercado_exotico:       bool
-    # Mercado de conteo (familia "count"): métrica + scope. None para otros mercados.
-    metric:                Optional[str] = None   # corners|cards|shots|sot
-    scope:                 Optional[str] = None   # total|home|away
+    # `metric` lo comparten dos familias: "count" (corners|cards|shots|sot) y
+    # "player" (goal|assist|goal_or_assist|sot). `scope` es solo de la familia count.
+    metric:                Optional[str] = None
+    scope:                 Optional[str] = None   # total|home|away (familia count)
     # Mercado por-jugador (familia "player"): nombre + métrica + umbral. faltante=True
     # para mercados conocidos pero aún no modelables (p.ej. tiros al arco por jugador).
     player:                Optional[str] = None   # nombre tal cual el boleto
@@ -317,6 +318,14 @@ def _gate_range(enriched: list[dict], es_bb: bool = False) -> None:
                     "VALIDATION_RANGE",
                     f"Selección {i}: resultado exacto inválido.",
                     detail=str(e),
+                )
+        if mercado == "player" and s.get("umbral") is not None:
+            try:
+                int(s["umbral"])
+            except (TypeError, ValueError):
+                raise RangeError(
+                    "VALIDATION_RANGE",
+                    f"Selección {i}: 'umbral' debe ser un número (recibido {s['umbral']!r}).",
                 )
 
 

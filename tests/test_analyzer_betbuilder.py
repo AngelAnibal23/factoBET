@@ -170,3 +170,11 @@ def test_count_sin_modelo_cuenta_exotica():
                                          counts_model=_COUNTS, neutral=True)
     assert res.n_exoticas == 1
     assert res.n_modelables == 0
+
+
+def test_load_player_model_cache_hit_devuelve_none():
+    # Contrato de cache (sin red): una liga ya cacheada como None se devuelve tal cual,
+    # igual que _load_counts_model. El path real a Supabase se ejerce en e2e.
+    import analyzer
+    analyzer._cached_player_model["LigaInexistenteXYZ"] = None
+    assert analyzer._load_player_model("LigaInexistenteXYZ") is None

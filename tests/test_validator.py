@@ -156,3 +156,17 @@ def test_valida_pata_player():
     assert s0.mercado == "player" and s0.player == "Bruno Fernandes"
     assert s0.metric == "goal_or_assist" and s0.umbral == 1 and s0.faltante is False
     assert s1.faltante is True and s1.metric == "sot"
+
+
+def test_umbral_no_numerico_lanza_rangeerror():
+    from validator import RangeError
+    ocr = {
+        "selecciones": [
+            {"equipo_local": "Portugal", "equipo_visitante": "Uzbekistan",
+             "mercado": "player", "seleccion": "yes", "cuota": None, "linea": None,
+             "player": "Bruno Fernandes", "metric": "goal", "umbral": "dos"},
+        ],
+        "cuota_total": 2.0, "casa_apuestas": "Betano",
+    }
+    with pytest.raises(RangeError):
+        validate(ocr, teams=_TEAMS_PLAYER)
