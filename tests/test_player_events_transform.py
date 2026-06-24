@@ -31,3 +31,12 @@ def test_parse_titulares_marca_solo_starters():
     tit = parse_titulares(LI)
     assert tit["p1"] is True and tit["p2"] is True
     assert tit["p3"] is False
+
+
+def test_parse_lineup_trae_lado_y_nombre():
+    from player_events_transform import parse_lineup
+    filas = parse_lineup(LI)
+    by = {f["player_id"]: f for f in filas}
+    assert by["p1"]["nombre"] == "Cristiano Ronaldo"
+    assert by["p1"]["lado"] == 1 and by["p1"]["fue_titular"] is True
+    assert by["p3"]["fue_titular"] is False   # suplente

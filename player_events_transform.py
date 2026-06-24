@@ -45,3 +45,22 @@ def parse_titulares(blob: str) -> dict:
             continue
         out[c["LP"]] = c.get("ST", "0") == "1"
     return out
+
+
+def parse_lineup(blob: str) -> list[dict]:
+    """df_li_1 enriquecido: una fila por jugador del once/banca con su lado y nombre.
+
+    Devuelve [{player_id (LP), nombre (LI), lado (IA int o None), fue_titular (ST==1)}].
+    Necesario para incluir a los titulares que NO anotaron (denominador del reparto)
+    y para resolver su equipo por (event_id, lado)."""
+    out = []
+    for c in _registros(blob):
+        if "LP" not in c:
+            continue
+        out.append({
+            "player_id": c["LP"],
+            "nombre": c.get("LI", ""),
+            "lado": int(c["IA"]) if c.get("IA", "").isdigit() else None,
+            "fue_titular": c.get("ST", "0") == "1",
+        })
+    return out
