@@ -45,3 +45,56 @@ def estimar_cuotas(registros: list[dict], k: float = 5.0) -> dict:
             "cuota_gol": cuota_gol, "cuota_asist": cuota_ast,
         }
     return out
+
+
+from rapidfuzz import fuzz
+
+RESOLVER_UMBRAL = 80.0   # token_set_ratio mínimo para aceptar un match de nombre
+
+
+class PlayerModel:
+    """Predictor por-jugador con params congelados. Solo contiene las métricas que
+    pasaron el gate (en params['metricas']) y los jugadores con cuotas publicadas."""
+
+    @classmethod
+    def from_params(cls, params: dict) -> "PlayerModel":
+        m = cls()
+        m.metricas = set(params.get("metricas", []))
+        m.jugadores = params.get("jugadores", {})
+        return m
+
+    def tiene(self, player_id: str, metric: str) -> bool:
+        if player_id not in self.jugadores:
+            return False
+        if metric == "goal_or_assist":
+            return {"goal", "assist"} <= self.metricas
+        return metric in self.metricas
+
+    def equipo_de(self, player_id: str) -> str | None:
+        j = self.jugadores.get(player_id)
+        return j["equipo"] if j else None
+
+    def resolver(self, nombre: str) -> str | None:
+        """Resuelve un nombre de jugador (del boleto) a player_id por fuzzy match."""
+        if not nombre:
+            return None
+        mejor_id, mejor_score = None, 0.0
+        for pid, j in self.jugadores.items():
+            score = fuzz.token_set_ratio(nombre.lower(), j["nombre"].lower())
+            if score > mejor_score:
+                mejor_id, mejor_score = pid, score
+        return mejor_id if mejor_score >= RESOLVER_UMBRAL else None
+
+    def prob(self, player_id: str, metric: str, lambda_equipo: float,
+             umbral: int = 1) -> float:
+        """P(el jugador alcanza `umbral` eventos | es titular), Poisson top-down."""
+        j = self.jugadores[player_id]
+        if metric == "goal":
+            lam = lambda_equipo * j["cuota_gol"]
+        elif metric == "assist":
+            lam = lambda_equipo * j["cuota_asist"]
+        elif metric == "goal_or_assist":
+            lam = lambda_equipo * (j["cuota_gol"] + j["cuota_asist"])
+        else:
+            raise ValueError(f"métrica player inválida: {metric!r}")
+        return float(1.0 - poisson.cdf(umbral - 1, lam))

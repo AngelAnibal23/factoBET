@@ -61,3 +61,59 @@ def test_k_cero_sin_goles_cae_al_prior():
     prior = 1.0 / 11
     assert abs(out["pz"]["cuota_gol"] - prior) < 1e-9
     assert abs(out["pz"]["cuota_asist"] - prior) < 1e-9
+
+
+from player_model import PlayerModel
+import math
+
+PARAMS = {
+    "metricas": ["goal", "assist"],
+    "jugadores": {
+        "p1": {"nombre": "Cristiano Ronaldo", "equipo": "Portugal",
+               "cuota_gol": 0.40, "cuota_asist": 0.10},
+        "p2": {"nombre": "Bruno Fernandes", "equipo": "Portugal",
+               "cuota_gol": 0.15, "cuota_asist": 0.30},
+    },
+}
+
+
+def test_tiene_respeta_metricas_gateadas():
+    m = PlayerModel.from_params(PARAMS)
+    assert m.tiene("p1", "goal") is True
+    assert m.tiene("p1", "assist") is True
+    assert m.tiene("p1", "goal_or_assist") is True   # ambos componentes publicados
+    assert m.tiene("p1", "corner") is False
+    # si una métrica no está publicada, goal_or_assist tampoco
+    solo_goal = PlayerModel.from_params({"metricas": ["goal"], "jugadores": PARAMS["jugadores"]})
+    assert solo_goal.tiene("p1", "assist") is False
+    assert solo_goal.tiene("p1", "goal_or_assist") is False
+    assert solo_goal.tiene("desconocido", "goal") is False
+
+
+def test_prob_anota_poisson():
+    m = PlayerModel.from_params(PARAMS)
+    # lambda_jugador = lambda_equipo(1.6) * cuota_gol(0.40) = 0.64 ; P(anota>=1)=1-e^-0.64
+    p = m.prob("p1", "goal", lambda_equipo=1.6, umbral=1)
+    assert abs(p - (1 - math.exp(-0.64))) < 1e-9
+
+
+def test_prob_anota_o_asiste_suma_lambdas():
+    m = PlayerModel.from_params(PARAMS)
+    # lambda = 1.6*(0.40+0.10)=0.80 ; P(>=1)=1-e^-0.80
+    p = m.prob("p1", "goal_or_assist", lambda_equipo=1.6, umbral=1)
+    assert abs(p - (1 - math.exp(-0.80))) < 1e-9
+
+
+def test_prob_umbral_dos():
+    m = PlayerModel.from_params(PARAMS)
+    from scipy.stats import poisson
+    lam = 1.6 * 0.40
+    p = m.prob("p1", "goal", lambda_equipo=1.6, umbral=2)   # P(X>=2)=1-cdf(1)
+    assert abs(p - (1 - poisson.cdf(1, lam))) < 1e-9
+
+
+def test_resolver_fuzzy_nombre():
+    m = PlayerModel.from_params(PARAMS)
+    assert m.resolver("Ronaldo") == "p1"           # token subset
+    assert m.resolver("B. Fernandes") == "p2"
+    assert m.resolver("Lionel Messi") is None       # nadie parecido -> None
