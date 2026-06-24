@@ -93,6 +93,10 @@ class SelectionAnalysis:
     n_partidos_local:      int
     n_partidos_visitante:  int
     alertas:               list[str] = field(default_factory=list)
+    # Familia "player": nombre del jugador y si es una pata conocida pero no
+    # modelable aún (faltante, p.ej. tiros al arco por jugador).
+    player:                Optional[str] = None
+    faltante:              bool = False
 
 
 @dataclass
@@ -125,6 +129,7 @@ class ParlayAnalysis:
     n_exoticas:           int = 0
     bet_builder_kelly:    Optional[float] = None
     exoticas_desc:        list[str] = field(default_factory=list)
+    faltantes_desc:       list[str] = field(default_factory=list)
     # Marcador más probable por partido (solo selecciones por ahora; ver marcador.py)
     marcadores_partido:   list[dict] = field(default_factory=list)
 
