@@ -1,6 +1,6 @@
 const MERCADO_LABEL = {
   '1X2': '1X2', over_under: 'Más/Menos', btts: 'Ambos marcan',
-  handicap: 'Hándicap', exotic: 'Exótico',
+  handicap: 'Hándicap', count: 'Conteo', player: 'Jugador', exotic: 'Exótico',
 }
 
 const SEL_LABEL = {
@@ -55,11 +55,19 @@ export default function SelectionCard({ sel, index }) {
             {sel.equipo_visitante && <span className="sel-vs">vs</span>}
             {sel.equipo_visitante && <span className="sel-away">{sel.equipo_visitante}</span>}
           </div>
+          {sel.mercado === 'player' && sel.player && (
+            <div className="sel-player">{sel.player}</div>
+          )}
           <div className="sel-badges">
             <span className="badge-mkt">{mercadoLabel}{lineaStr}</span>
             <span className="badge-sel">{selLabel}</span>
             {sel.cuota != null && <span className="badge-odds">{sel.cuota.toFixed(2)}</span>}
             <span className={`badge-cob ${cobClass}`}>{sel.nivel_cobertura}</span>
+            {sel.faltante && (
+              <span className="badge-cob nula" title="Mercado conocido, datos pendientes">
+                pendiente
+              </span>
+            )}
           </div>
         </div>
 
