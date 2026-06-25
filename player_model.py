@@ -11,12 +11,16 @@ from scipy.stats import poisson
 METRICAS_PLAYER = ("goal", "assist", "goal_or_assist")
 
 
-def estimar_cuotas(registros: list[dict], k: float = 5.0) -> dict:
+def estimar_cuotas(registros: list[dict], k: float = 5.0,
+                   min_partidos: int = 1) -> dict:
     """Estima cuota_gol y cuota_asist por jugador con shrinkage.
 
     registros: lista de partidos-como-titular, cada uno
       {player_id, nombre, equipo, goles_jugador, asist_jugador, goles_equipo, n_titulares}.
     k: fuerza del prior (n de "partidos virtuales" hacia el prior igualitario).
+    min_partidos: solo se publican jugadores con al menos esta cantidad de partidos
+      como titular. Con pocos partidos la cuota es ruido (no se distingue del 1/11)
+      y las casas solo ofrecen props de jugadores establecidos; por eso filtramos.
 
     Cuota = fracción de goles del equipo que el jugador anotó/asistió. Los partidos
     con goles_equipo==0 se excluyen del promedio (share indefinido) pero su prior
@@ -28,6 +32,8 @@ def estimar_cuotas(registros: list[dict], k: float = 5.0) -> dict:
 
     out = {}
     for pid, regs in por_jugador.items():
+        if len(regs) < min_partidos:
+            continue
         prior = sum(1.0 / max(r["n_titulares"], 1) for r in regs) / len(regs)
         shares_gol = [r["goles_jugador"] / r["goles_equipo"]
                       for r in regs if r["goles_equipo"] > 0]

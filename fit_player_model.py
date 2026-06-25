@@ -21,7 +21,9 @@ from player_model import estimar_cuotas, PlayerModel
 GATE_MIN_MEJORA = 0.03
 K_SHRINK = 5.0
 TEST_FRAC = 0.30
-LAMBDA_PROXY = 1.35   # goles esperados por equipo (proxy de liga para el gate)
+MIN_PARTIDOS = 10     # historial mínimo (titular) para publicar/evaluar un jugador
+LAMBDA_PROXY = 1.0    # goles esperados por equipo (proxy de liga). Tasa real tras el
+                      # fix de datos ~1.05/equipo; el 1.35 viejo sobre-predecía ~1.8x.
 
 
 def registros_desde_eventos(eventos: list[dict], titulares: dict) -> list[dict]:
@@ -63,18 +65,21 @@ def _brier(probs, occ):
     return float(np.mean((np.asarray(probs) - np.asarray(occ, float)) ** 2))
 
 
-def _gate(train, test, metrica):
-    """Brier del modelo (cuotas) vs baseline (1/n_titulares) en el holdout."""
-    cuotas = estimar_cuotas(train, k=K_SHRINK)
+def _gate(train, test, metrica, min_partidos=MIN_PARTIDOS):
+    """Brier del modelo (cuotas) vs baseline (1/n_titulares) en el holdout.
+
+    Solo se evalúan los jugadores ELEGIBLES (con >= min_partidos en train): son los
+    únicos que el producto sirve, así que el gate debe medir el valor justo ahí y no
+    diluirse con miles de jugadores de 1-2 partidos cuya cuota es ruido."""
+    cuotas = estimar_cuotas(train, k=K_SHRINK, min_partidos=min_partidos)
     m = PlayerModel.from_params({"metricas": [metrica], "jugadores": cuotas})
     col = "goles_jugador" if metrica == "goal" else "asist_jugador"
     probs_m, probs_b, occ = [], [], []
     for r in test:
         pid = r["player_id"]
-        if m.tiene(pid, metrica):
-            probs_m.append(m.prob(pid, metrica, LAMBDA_PROXY, umbral=1))
-        else:
-            probs_m.append(1 - np.exp(-LAMBDA_PROXY / r["n_titulares"]))
+        if not m.tiene(pid, metrica):
+            continue   # jugador no elegible: no se sirve, no se evalúa
+        probs_m.append(m.prob(pid, metrica, LAMBDA_PROXY, umbral=1))
         probs_b.append(1 - np.exp(-LAMBDA_PROXY / r["n_titulares"]))
         occ.append(1.0 if r[col] >= 1 else 0.0)
     return _brier(probs_m, occ), _brier(probs_b, occ)
@@ -141,7 +146,8 @@ def main():
               f"mejora={mejora*100:+.1f}%  {'✅ PASA' if ok else '❌ no pasa'}")
         if ok:
             metricas_ok.append(metrica)
-    cuotas_prod = estimar_cuotas(regs, k=K_SHRINK)   # producción = todos los datos
+    # producción = todos los datos, pero solo jugadores elegibles (>= MIN_PARTIDOS)
+    cuotas_prod = estimar_cuotas(regs, k=K_SHRINK, min_partidos=MIN_PARTIDOS)
     return {"metricas": metricas_ok, "jugadores": cuotas_prod}
 
 

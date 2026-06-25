@@ -50,6 +50,16 @@ def test_no_revienta_con_n_titulares_cero():
     assert 0.0 <= out["px"]["cuota_gol"] <= 1.0
 
 
+def test_min_partidos_filtra_jugadores_con_poco_historial():
+    # p1 tiene 2 partidos como titular; p2 y p3 tienen 1 cada uno.
+    # min_partidos=2 -> solo p1 es elegible (las casas solo ofrecen props de
+    # jugadores con historial; los de 1 partido son ruido, no se publican).
+    out = estimar_cuotas(REGISTROS, k=2.0, min_partidos=2)
+    assert set(out) == {"p1"}
+    # default (min_partidos=1) los incluye a todos -> no rompe llamadas previas
+    assert set(estimar_cuotas(REGISTROS, k=2.0)) == {"p1", "p2", "p3"}
+
+
 def test_k_cero_sin_goles_cae_al_prior():
     # Jugador cuyos partidos tienen goles_equipo==0 (shares vacios) y k==0:
     # denom == 0 no debe reventar; cae al prior.
