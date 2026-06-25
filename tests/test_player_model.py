@@ -167,3 +167,21 @@ def test_estimar_cuotas_sot_excluye_sot_equipo_cero():
     out = estimar_cuotas_sot(regs, k=2.0)
     prior = 1.0 / 11
     assert abs(out["pz"]["cuota_sot"] - prior) < 1e-9
+
+
+def test_prob_sot_top_down():
+    from player_model import PlayerModel
+    import math
+    params = {"metricas": ["sot"], "jugadores": {
+        "p1": {"nombre": "Ronaldo", "equipo": "Portugal", "cuota_sot": 0.35},
+    }}
+    m = PlayerModel.from_params(params)
+    assert m.tiene("p1", "sot") is True
+    assert m.tiene("p1", "goal") is False        # este modelo solo publica sot
+    # lambda_jugador = lambda_sot_equipo(4.0) * cuota_sot(0.35) = 1.4
+    p = m.prob("p1", "sot", lambda_equipo=4.0, umbral=1)
+    assert abs(p - (1 - math.exp(-1.4))) < 1e-9
+    # umbral 2+: P(X>=2) = 1 - cdf(1)
+    from scipy.stats import poisson
+    p2 = m.prob("p1", "sot", lambda_equipo=4.0, umbral=2)
+    assert abs(p2 - (1 - poisson.cdf(1, 1.4))) < 1e-9

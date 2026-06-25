@@ -8,7 +8,7 @@ sobre los eventos del jugador. NO lee red al importar: funciones puras.
 
 from scipy.stats import poisson
 
-METRICAS_PLAYER = ("goal", "assist", "goal_or_assist")
+METRICAS_PLAYER = ("goal", "assist", "goal_or_assist", "sot")
 
 
 def _shrink_share(shares: list[float], prior: float, k: float) -> float:
@@ -131,6 +131,8 @@ class PlayerModel:
             lam = lambda_equipo * j["cuota_asist"]
         elif metric == "goal_or_assist":
             lam = lambda_equipo * (j["cuota_gol"] + j["cuota_asist"])
+        elif metric == "sot":
+            lam = lambda_equipo * j["cuota_sot"]
         else:
             raise ValueError(f"métrica player inválida: {metric!r}")
         return float(1.0 - poisson.cdf(umbral - 1, lam))
