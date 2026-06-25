@@ -104,7 +104,7 @@ Tu única tarea: extraer las selecciones del parlay que aparece en la imagen y d
 REGLAS ESTRICTAS:
 1. Responde SOLO con JSON válido. Cero texto antes o después.
 2. No inventes datos. Si un campo no está visible, usa null.
-3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, resultado_exacto, count, exotic
+3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, resultado_exacto, count, player, exotic
 4. Para "seleccion":
    - 1X2: home, draw, away
    - over_under: over, under  (SOLO goles de partido completo)
@@ -121,8 +121,18 @@ REGLAS ESTRICTAS:
     Ejemplos: "Más de 9.5 córners" -> count/corners/total/over/9.5 ;
               "Tarjetas local más de 2.5" -> count/cards/home/over/2.5 ;
               "Remates al arco +7.5" -> count/sot/total/over/7.5
-4c. CLASIFICA COMO "exotic" SOLO lo no modelable: goleador, asistencias, jugador amonestado,
-    goles/eventos de PRIMER o SEGUNDO TIEMPO, minuto del gol, y props de jugador individual.
+4c. MERCADO "player" (props de jugador individual). Rellena además "player", "metric", "umbral":
+    - "player": nombre del jugador tal cual aparece (ej "Bruno Fernandes", "Lionel Messi")
+    - "metric": "goal" (anota/marca gol) | "assist" (da asistencia) |
+                "goal_or_assist" (anota o asiste) | "sot" (tiros/remates al arco del jugador)
+    - "umbral": el número mínimo de eventos (ej "2+ tiros al arco" -> 2 ; "anota" -> 1)
+    - "seleccion": "yes" ; "faltante": true SOLO si metric=="sot" (tiros al arco por jugador,
+      mercado conocido pero aún no modelable). Para goal/assist/goal_or_assist, "faltante": false.
+    Ejemplos: "Lionel Messi 1+ Tiros al Arco" -> player/sot/umbral 1/faltante true ;
+              "Bruno Fernandes anota o da una asistencia" -> player/goal_or_assist/umbral 1/faltante false ;
+              "Cristiano Ronaldo marca" -> player/goal/umbral 1/faltante false
+4d. CLASIFICA COMO "exotic" SOLO lo no modelable que NO sea de jugador: goles/eventos de
+    PRIMER o SEGUNDO TIEMPO, minuto del gol, córners/faltas por equipo no listados arriba.
 5. "cuota" debe ser número decimal (ej: 1.85, 2.30). Si ves cuotas americanas (+150) conviértelas.
 6. "linea" solo para over_under y handicap (ej: 2.5 para over 2.5, -1.5 para handicap -1.5).
 7. "cuota_total" es la cuota combinada del parlay completo si aparece en la imagen.
@@ -139,7 +149,10 @@ FORMATO DE SALIDA (exactamente esto):
       "cuota": 1.85,
       "linea": null,
       "metric": null,
-      "scope": null
+      "scope": null,
+      "player": null,
+      "umbral": 1,
+      "faltante": false
     }
   ],
   "cuota_total": 5.40,

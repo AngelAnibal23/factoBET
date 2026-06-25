@@ -129,3 +129,44 @@ def test_bet_builder_backfill_handles_missing_team_key():
     }
     parlay = validate(ocr, _TEAMS)
     assert parlay.selecciones[1].equipo_local_raw == "Uzbekistan"
+
+
+# ── Familia "player" (Fase 2 — modelo por jugador) ───────────────────────────
+
+_TEAMS_PLAYER = [
+    {"id": "P1", "nombre_oficial": "Portugal", "aliases": []},
+    {"id": "U1", "nombre_oficial": "Uzbekistan", "aliases": ["Uzbekistán"]},
+]
+
+
+def test_valida_pata_player():
+    ocr = {
+        "selecciones": [
+            {"equipo_local": "Portugal", "equipo_visitante": "Uzbekistan",
+             "mercado": "player", "seleccion": "yes", "cuota": None, "linea": None,
+             "player": "Bruno Fernandes", "metric": "goal_or_assist", "umbral": 1},
+            {"equipo_local": "Portugal", "equipo_visitante": "Uzbekistan",
+             "mercado": "player", "seleccion": "yes", "cuota": None, "linea": None,
+             "player": "Cristiano Ronaldo", "metric": "sot", "umbral": 2, "faltante": True},
+        ],
+        "cuota_total": 3.50, "casa_apuestas": "Betano",
+    }
+    parlay = validate(ocr, teams=_TEAMS_PLAYER)
+    s0, s1 = parlay.selecciones
+    assert s0.mercado == "player" and s0.player == "Bruno Fernandes"
+    assert s0.metric == "goal_or_assist" and s0.umbral == 1 and s0.faltante is False
+    assert s1.faltante is True and s1.metric == "sot"
+
+
+def test_umbral_no_numerico_lanza_rangeerror():
+    from validator import RangeError
+    ocr = {
+        "selecciones": [
+            {"equipo_local": "Portugal", "equipo_visitante": "Uzbekistan",
+             "mercado": "player", "seleccion": "yes", "cuota": None, "linea": None,
+             "player": "Bruno Fernandes", "metric": "goal", "umbral": "dos"},
+        ],
+        "cuota_total": 2.0, "casa_apuestas": "Betano",
+    }
+    with pytest.raises(RangeError):
+        validate(ocr, teams=_TEAMS_PLAYER)

@@ -114,6 +114,7 @@ def _bet_builder_block(result: ParlayAnalysis) -> dict | None:
         "n_modelables":         result.n_modelables,
         "n_exoticas":           result.n_exoticas,
         "exoticas":             result.exoticas_desc,
+        "faltantes":            result.faltantes_desc,
         "kelly_fraccion":       result.bet_builder_kelly,
     }
 
@@ -137,6 +138,8 @@ def _serialize_analysis(result: ParlayAnalysis, needs_confirmation: list[str], n
             "kelly_fraccion":      s.kelly_fraccion,
             "nivel_cobertura":     s.nivel_cobertura,
             "mercado_exotico":     s.mercado_exotico,
+            "player":              s.player,
+            "faltante":            s.faltante,
             "n_partidos_local":    s.n_partidos_local,
             "n_partidos_visitante":s.n_partidos_visitante,
             "alertas":             s.alertas,

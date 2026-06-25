@@ -29,6 +29,34 @@ def count_leg_prob(model, sel, home, away, neutral) -> float | None:
     )
 
 
+PLAYER_MARKET = "player"   # props por-jugador (anota/asiste); sot va como faltante
+
+
+def player_leg_prob(model, sel, lh, la, home, away) -> float | None:
+    """Marginal de una pata player vía Poisson top-down. None si: es faltante,
+    no hay modelo, el nombre no resuelve, la métrica no está gateada, o no se
+    puede ubicar al jugador en el partido (sin λ de su equipo).
+
+    home/away son los nombres CANÓNICOS de los equipos del partido (no equipo_id):
+    el modelo guarda el equipo del jugador por nombre canónico."""
+    from rapidfuzz import fuzz
+    if model is None or sel.faltante or not sel.player:
+        return None
+    pid = model.resolver(sel.player)
+    if pid is None or not model.tiene(pid, sel.metric):
+        return None
+    equipo = model.equipo_de(pid)
+    if equipo is None or home is None or away is None:
+        return None
+    # ubicar al jugador en local/visitante por su equipo (fuzzy contra home/away)
+    s_home = fuzz.token_set_ratio(equipo.lower(), home.lower())
+    s_away = fuzz.token_set_ratio(equipo.lower(), away.lower())
+    if max(s_home, s_away) < 60:
+        return None
+    lam = lh if s_home >= s_away else la
+    return model.prob(pid, sel.metric, lam, umbral=sel.umbral)
+
+
 def scoreline_matrix(lh: float, la: float, rho: float) -> np.ndarray:
     """P(local=i, visitante=j) para i,j en {0..MAX_GOALS}, normalizada a suma 1.
 
@@ -149,11 +177,12 @@ class BetBuilderSinCuotaError(ValueError):
 
 
 def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
-                        counts_model=None, neutral: bool = False):
+                        counts_model=None, neutral: bool = False, player_model=None):
     """Ensambla el análisis de un bet builder en un ParlayAnalysis.
 
     lh/la/rho: del partido (lh None si los equipos no están en el modelo).
     counts_model: CountsModel de la liga (None si no hay). neutral: sede neutral.
+    player_model: PlayerModel de la liga (None si no hay).
     Import local de analyzer para evitar ciclo de import a nivel de módulo.
     """
     from analyzer import SelectionAnalysis, ParlayAnalysis
@@ -169,15 +198,22 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
     match_sel = next((s for s in parlay.selecciones if s.visitante_match), None)
     c_home = match_sel.local_match.equipo_id if match_sel else None
     c_away = match_sel.visitante_match.equipo_id if match_sel else None
+    # Para la familia player el equipo se ubica por nombre CANÓNICO (no equipo_id).
+    p_home = match_sel.local_match.canonical if match_sel else None
+    p_away = match_sel.visitante_match.canonical if match_sel else None
 
     analyses = []
     goal_legs = []
     count_marginals = []
     exoticas_desc = []
+    faltantes_desc = []
     for sel in parlay.selecciones:
         is_goal = sel.mercado in GOAL_MARKETS
         is_count = sel.mercado == COUNT_MARKET
+        is_player = sel.mercado == PLAYER_MARKET
         count_p = count_leg_prob(counts_model, sel, c_home, c_away, neutral) if is_count else None
+        player_p = (player_leg_prob(player_model, sel, lh, la, p_home, p_away)
+                    if (is_player and covered) else None)
 
         if is_goal and covered:
             leg = (sel.mercado, sel.seleccion, sel.linea)
@@ -188,6 +224,14 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
             prob_mod = round(count_p, 6)
             count_marginals.append(count_p)
             nivel_cov, alertas = "MEDIA", ["Mercado de conteo: marginal NegBin con shrinkage."]
+        elif is_player and player_p is not None:
+            prob_mod = round(player_p, 6)
+            count_marginals.append(player_p)   # entra al techo/estimada como una marginal más
+            nivel_cov, alertas = "MEDIA", ["Mercado de jugador: marginal Poisson top-down."]
+        elif is_player and sel.faltante:
+            prob_mod = None
+            faltantes_desc.append(sel.player or sel.seleccion)
+            nivel_cov, alertas = "NULA", ["Mercado conocido pero sin datos: tiros al arco por jugador (pendiente)."]
         elif is_goal:  # goles pero sin cobertura de equipos
             prob_mod = None
             nivel_cov, alertas = "BAJA", ["Equipos sin datos en el modelo: no se puede calcular probabilidad."]
@@ -210,6 +254,8 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
             edge=None, kelly_fraccion=None,
             nivel_cobertura=nivel_cov, mercado_exotico=sel.mercado_exotico,
             n_partidos_local=0, n_partidos_visitante=0, alertas=alertas,
+            player=sel.player if is_player else None,
+            faltante=(is_player and sel.faltante),
         ))
 
     n_modelables = len(goal_legs) + len(count_marginals)
@@ -259,5 +305,6 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
         prob_estimada=prob_estimada,
         prob_impl_combinada=p_impl, n_modelables=n_modelables, n_exoticas=n_exoticas,
         bet_builder_kelly=kelly, exoticas_desc=exoticas_desc,
+        faltantes_desc=faltantes_desc,
         marcadores_partido=marcadores,
     )

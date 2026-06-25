@@ -93,6 +93,10 @@ class SelectionAnalysis:
     n_partidos_local:      int
     n_partidos_visitante:  int
     alertas:               list[str] = field(default_factory=list)
+    # Familia "player": nombre del jugador y si es una pata conocida pero no
+    # modelable aún (faltante, p.ej. tiros al arco por jugador).
+    player:                Optional[str] = None
+    faltante:              bool = False
 
 
 @dataclass
@@ -125,6 +129,7 @@ class ParlayAnalysis:
     n_exoticas:           int = 0
     bet_builder_kelly:    Optional[float] = None
     exoticas_desc:        list[str] = field(default_factory=list)
+    faltantes_desc:       list[str] = field(default_factory=list)
     # Marcador más probable por partido (solo selecciones por ahora; ver marcador.py)
     marcadores_partido:   list[dict] = field(default_factory=list)
 
@@ -597,6 +602,33 @@ def _load_counts_model(liga_nombre: str):
     return model
 
 
+_cached_player_model: dict = {}
+
+
+def _load_player_model(liga_nombre: str):
+    """Carga el PlayerModel de una liga desde parametros_modelo (player_v0.1).
+    None si no hay params (mismo contrato que _load_counts_model)."""
+    import json
+    from player_model import PlayerModel
+    if liga_nombre in _cached_player_model:
+        return _cached_player_model[liga_nombre]
+    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    liga = sb.table("ligas").select("id").eq("nombre", liga_nombre).execute().data
+    if not liga:
+        _cached_player_model[liga_nombre] = None
+        return None
+    rows = (sb.table("parametros_modelo")
+            .select("notas")
+            .eq("liga_id", liga[0]["id"]).eq("version_modelo", "player_v0.1")
+            .eq("is_production", True).execute().data)
+    if not rows:
+        _cached_player_model[liga_nombre] = None
+        return None
+    model = PlayerModel.from_params(json.loads(rows[0]["notas"]))
+    _cached_player_model[liga_nombre] = model
+    return model
+
+
 def _load_team_liga_map() -> dict[str, str]:
     """Mapa equipo_id -> "liga1" | "internacional" para rutear cada parlay."""
     global _cached_team_liga, _team_liga_ts
@@ -769,6 +801,7 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
         model = _load_intl_predictor()
         rho, version = model.rho, "intl_v0.1"
         counts = _load_counts_model("Internacional")
+        player = _load_player_model("Internacional")
         if match_sel:
             home = match_sel.local_match.canonical
             away = match_sel.visitante_match.canonical
@@ -783,6 +816,7 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
         model, _, _ = _load_and_fit()
         rho, version = model.rho, "v0.2"
         counts = _load_counts_model("Liga 1 Peruana")
+        player = _load_player_model("Liga 1 Peruana")
         if match_sel:
             hid = match_sel.local_match.equipo_id
             aid = match_sel.visitante_match.equipo_id
@@ -794,7 +828,8 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
             lh, la = None, None
 
     return analyze_bet_builder(parlay, lh, la, rho, version, margin,
-                               counts_model=counts, neutral=neutral_flag)
+                               counts_model=counts, neutral=neutral_flag,
+                               player_model=player)
 
 
 def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:

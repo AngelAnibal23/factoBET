@@ -41,7 +41,7 @@ VALID_ODDS = {
 }
 DEFAULT_ODDS_RANGE = (1.05, 200.0)
 
-VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "exotic"}
+VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "exotic", "count", "player"}
 VALID_SEL_1X2   = {"home", "draw", "away"}
 VALID_SEL_OU    = {"over", "under"}
 VALID_SEL_BTTS  = {"yes", "no"}
@@ -94,9 +94,15 @@ class ValidatedSelection:
     # Derived
     prob_implicita:        Optional[float]   # None en bet builder
     mercado_exotico:       bool
-    # Mercado de conteo (familia "count"): métrica + scope. None para otros mercados.
-    metric:                Optional[str] = None   # corners|cards|shots|sot
-    scope:                 Optional[str] = None   # total|home|away
+    # `metric` lo comparten dos familias: "count" (corners|cards|shots|sot) y
+    # "player" (goal|assist|goal_or_assist|sot). `scope` es solo de la familia count.
+    metric:                Optional[str] = None
+    scope:                 Optional[str] = None   # total|home|away (familia count)
+    # Mercado por-jugador (familia "player"): nombre + métrica + umbral. faltante=True
+    # para mercados conocidos pero aún no modelables (p.ej. tiros al arco por jugador).
+    player:                Optional[str] = None   # nombre tal cual el boleto
+    umbral:                int = 1                 # X+ eventos (default 1)
+    faltante:              bool = False
 
 
 @dataclass
@@ -313,6 +319,14 @@ def _gate_range(enriched: list[dict], es_bb: bool = False) -> None:
                     f"Selección {i}: resultado exacto inválido.",
                     detail=str(e),
                 )
+        if mercado == "player" and s.get("umbral") is not None:
+            try:
+                int(s["umbral"])
+            except (TypeError, ValueError):
+                raise RangeError(
+                    "VALIDATION_RANGE",
+                    f"Selección {i}: 'umbral' debe ser un número (recibido {s['umbral']!r}).",
+                )
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -372,6 +386,9 @@ def validate(ocr: dict, teams: list[dict] | None = None) -> ValidatedParlay:
             mercado_exotico      = s["mercado"] == "exotic",
             metric               = s.get("metric"),
             scope                = s.get("scope"),
+            player               = s.get("player"),
+            umbral               = int(s.get("umbral") or 1),
+            faltante             = bool(s.get("faltante", False)),
         ))
 
     return ValidatedParlay(

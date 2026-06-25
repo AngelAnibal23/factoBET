@@ -18,6 +18,7 @@ export default function BetBuilderVerdict({ data }) {
     n_modelables,
     n_exoticas,
     exoticas = [],
+    faltantes = [],
     kelly_fraccion,
   } = data
 
@@ -69,6 +70,20 @@ export default function BetBuilderVerdict({ data }) {
             </ul>
             <p className="bb-exoticas-note">
               El techo es una cota superior: estas patas solo pueden bajar la probabilidad real.
+            </p>
+          </div>
+        )}
+
+        {faltantes.length > 0 && (
+          <div className="faltantes-box">
+            <h4>Datos pendientes ({faltantes.length})</h4>
+            <ul>
+              {faltantes.map((f, i) => (
+                <li key={i}>{f}</li>
+              ))}
+            </ul>
+            <p className="hint">
+              Mercado conocido (tiros al arco por jugador) aún sin fuente de datos.
             </p>
           </div>
         )}

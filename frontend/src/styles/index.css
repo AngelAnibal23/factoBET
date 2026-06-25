@@ -552,6 +552,12 @@ body {
 
 .sel-vs { font-size: 11px; color: var(--sub); font-weight: 400; }
 
+.sel-player {
+  font-size: 12px;
+  color: var(--sub);
+  font-weight: 500;
+}
+
 .sel-badges {
   display: flex;
   align-items: center;
@@ -883,6 +889,50 @@ body {
   background: var(--yellow);
 }
 .bb-exoticas-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.5;
+}
+
+.faltantes-box {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.faltantes-box h4 {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--sub);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.faltantes-box ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.faltantes-box ul li {
+  font-size: 13px;
+  color: var(--text);
+  padding-left: 14px;
+  position: relative;
+}
+.faltantes-box ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--sub);
+}
+.faltantes-box .hint {
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--sub);
