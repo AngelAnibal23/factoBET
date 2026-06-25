@@ -11,7 +11,10 @@ download_flashscore_stats.py). Aquí solo se bajan 2 feeds livianos por partido.
 Emite DOS tipos de fila por partido:
   - tipo="Lineup": una por jugador del df_li_1 (con lado y fue_titular) — necesarias
     para incluir a los titulares que NO anotaron (denominador del reparto).
-  - tipo=evento (Goal/Assistance/Yellow Card/...): una por incidencia del df_sui_1.
+  - tipo=evento (Goal/Assistance/Yellow Card/...): UNIÓN de df_sui_1 y los goleadores
+    recuperados del campo LIT de df_li_1. df_sui_1 OMITE el `Goal` de todo gol con
+    asistencia (deja solo la `Assistance`) y trae 0 goles en ligas no-top; sin el LIT
+    la tasa caía a ~0.84 goles/partido (real ~2.7). Ver eventos_completos().
 
 Esquema verificado contra el feed real (2026-06-24): en df_li_1 el titular es LK==1
 (suplente LK==2), el LADO se deriva del bloque LC (1=local, 2=visitante) y los técnicos
@@ -26,7 +29,7 @@ import time
 
 from curl_cffi import requests as cr
 
-from player_events_transform import parse_eventos, parse_lineup
+from player_events_transform import eventos_completos, parse_lineup
 
 FEED = "https://2.flashscore.ninja/2/x/feed"
 HDR = {"x-fsign": "SW9D1eZo", "Referer": "https://www.flashscore.com/"}
@@ -53,8 +56,11 @@ def _event_ids():
 
 
 def bajar_partido(eid: str) -> list[dict]:
-    eventos = parse_eventos(_feed(f"df_sui_1_{eid}"))
-    lineup = parse_lineup(_feed(f"df_li_1_{eid}"))
+    sui_blob = _feed(f"df_sui_1_{eid}")
+    li_blob = _feed(f"df_li_1_{eid}")
+    # UNIÓN sui_1 ∪ LIT: recupera los goles que df_sui_1 omite (asistidos / ligas no-top).
+    eventos = eventos_completos(sui_blob, li_blob)
+    lineup = parse_lineup(li_blob)
     titular = {f["player_id"]: f["fue_titular"] for f in lineup}
     lado_lin = {f["player_id"]: f["lado"] for f in lineup}   # player_id -> lado (LC)
     filas = []

@@ -3,6 +3,8 @@
 Sin red: reciben el string ya decodificado y devuelven dicts/listas. La descarga
 vive en download_player_events.py (offline, .venv-fbref)."""
 
+import re
+
 REG_SEP = "~"
 FLD_SEP = "¬"
 KV_SEP = "÷"
@@ -88,3 +90,69 @@ def parse_lineup(blob: str) -> list[dict]:
         "lado": lado,
         "fue_titular": titular,
     } for c, titular, lado in _jugadores(blob)]
+
+
+# Goleador del campo LIT: "MIN' Goleador" o "MIN' Goleador (Asistente)" (el minuto
+# admite descuento "90+2'"). El goleador es el texto entre el minuto y el paréntesis.
+_LIT_MIN = re.compile(r"^(\d+(?:\+\d+)?)'")
+_LIT_SCORER = re.compile(r"^\d+(?:\+\d+)?'\s+(.+?)(?:\s+\(.*)?$")
+
+
+def parse_lit_goles(blob: str) -> list[dict]:
+    """Goleadores recuperados del campo LIT de df_li_1.
+
+    POR QUÉ: df_sui_1 OMITE el registro `Goal` de todo gol con asistencia (deja solo
+    el `Assistance`) y en muchas ligas no-top no trae goles; el goleador SÍ vive en el
+    LIT. El goleador es el nombre TRAS EL MINUTO en el TEXTO del LIT, NO el dueño de la
+    fila (un jugador con varios eventos —p.ej. gol + cambio— guarda solo uno en su LIT,
+    así que el LIT del gol puede aparecer en la fila del asistente). Se resuelve el
+    nombre del goleador contra el lineup para obtener player_id y lado.
+
+    Devuelve [{player_id, nombre, lado, minuto}] dedup por (player_id, minuto). OJO: el
+    LIT NO distingue gol de tarjeta ("90+2' Vrsaljko S. (Tripping)"); ese filtrado se
+    hace en eventos_completos() cruzando con las Yellow/Red de df_sui_1."""
+    name2id, name2lado, lits = {}, {}, set()
+    for c, _titular, lado in _jugadores(blob):
+        nombre = c.get("LI", "")
+        if nombre:
+            name2id[nombre] = c["LP"]
+            name2lado[nombre] = lado
+        if c.get("LIT"):
+            lits.add(c["LIT"])
+
+    goles = {}
+    for lit in lits:
+        m_min, m_sc = _LIT_MIN.match(lit), _LIT_SCORER.match(lit)
+        if not m_min or not m_sc:
+            continue
+        scorer = m_sc.group(1).strip()
+        if scorer not in name2id:        # debe ser un jugador del lineup
+            continue
+        minuto = m_min.group(1) + "'"
+        goles[(name2id[scorer], minuto)] = {
+            "player_id": name2id[scorer], "nombre": scorer,
+            "lado": name2lado[scorer], "minuto": minuto,
+        }
+    return list(goles.values())
+
+
+def eventos_completos(sui_blob: str, li_blob: str) -> list[dict]:
+    """Eventos del df_sui_1 + goleadores recuperados del LIT del df_li_1 (la UNIÓN).
+
+    Arregla el sub-conteo de goles: agrega un evento `Goal` por cada goleador del LIT
+    que NO esté ya en df_sui_1 (como Goal/Penalty) y que NO sea una tarjeta ni un
+    autogol a ese mismo (jugador, minuto). Dedup por (player_id, minuto); un doblete
+    emite dos filas Goal (el load las agrega vía `cantidad`)."""
+    eventos = parse_eventos(sui_blob)
+    excl = {                              # (player_id, minuto) que NO deben re-agregarse
+        (e["player_id"], e["minuto"])
+        for e in eventos
+        if e["tipo"] in ("Goal", "Penalty", "Yellow Card", "Red Card", "Own goal")
+    }
+    extras = [
+        {"tipo": "Goal", "player_id": g["player_id"], "nombre": g["nombre"],
+         "lado": g["lado"], "minuto": g["minuto"], "mitad": ""}
+        for g in parse_lit_goles(li_blob)
+        if (g["player_id"], g["minuto"]) not in excl
+    ]
+    return eventos + extras
