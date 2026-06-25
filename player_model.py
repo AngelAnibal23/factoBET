@@ -11,6 +11,13 @@ from scipy.stats import poisson
 METRICAS_PLAYER = ("goal", "assist", "goal_or_assist")
 
 
+def _shrink_share(shares: list[float], prior: float, k: float) -> float:
+    """Media bayesiana de `shares` hacia `prior` con fuerza `k`. Si no hay shares
+    (denom==0 con k==0) cae al prior."""
+    denom = len(shares) + k
+    return (sum(shares) + k * prior) / denom if denom > 0 else prior
+
+
 def estimar_cuotas(registros: list[dict], k: float = 5.0,
                    min_partidos: int = 1) -> dict:
     """Estima cuota_gol y cuota_asist por jugador con shrinkage.
@@ -40,15 +47,38 @@ def estimar_cuotas(registros: list[dict], k: float = 5.0,
         shares_ast = [r["asist_jugador"] / r["goles_equipo"]
                       for r in regs if r["goles_equipo"] > 0]
 
-        def _cuota(shares):
-            denom = len(shares) + k
-            return (sum(shares) + k * prior) / denom if denom > 0 else prior
-
-        cuota_gol = _cuota(shares_gol)
-        cuota_ast = _cuota(shares_ast)
+        cuota_gol = _shrink_share(shares_gol, prior, k)
+        cuota_ast = _shrink_share(shares_ast, prior, k)
         out[pid] = {
             "nombre": regs[0]["nombre"], "equipo": regs[0]["equipo"],
             "cuota_gol": cuota_gol, "cuota_asist": cuota_ast,
+        }
+    return out
+
+
+def estimar_cuotas_sot(registros: list[dict], k: float = 5.0,
+                       min_partidos: int = 1) -> dict:
+    """Estima cuota_sot por jugador con shrinkage hacia 1/n_titulares.
+
+    registros: partidos-como-titular {player_id, nombre, equipo, sot_jugador,
+      sot_equipo, n_titulares}. cuota_sot = fracción de los SoT del equipo que hizo
+      el jugador. Partidos con sot_equipo==0 se excluyen del promedio (share
+      indefinido); su prior 1/n_titulares sí informa el shrinkage.
+    """
+    por_jugador: dict[str, list[dict]] = {}
+    for r in registros:
+        por_jugador.setdefault(r["player_id"], []).append(r)
+
+    out = {}
+    for pid, regs in por_jugador.items():
+        if len(regs) < min_partidos:
+            continue
+        prior = sum(1.0 / max(r["n_titulares"], 1) for r in regs) / len(regs)
+        shares = [r["sot_jugador"] / r["sot_equipo"]
+                  for r in regs if r["sot_equipo"] > 0]
+        out[pid] = {
+            "nombre": regs[0]["nombre"], "equipo": regs[0]["equipo"],
+            "cuota_sot": _shrink_share(shares, prior, k),
         }
     return out
 

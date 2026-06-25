@@ -127,3 +127,43 @@ def test_resolver_fuzzy_nombre():
     assert m.resolver("Ronaldo") == "p1"           # token subset
     assert m.resolver("B. Fernandes") == "p2"
     assert m.resolver("Lionel Messi") is None       # nadie parecido -> None
+
+
+from player_model import estimar_cuotas_sot
+
+# 2 titulares de "POR": Ronaldo dispara mucho al arco, Suplente casi nada.
+REGS_SOT = [
+    {"player_id": "p1", "nombre": "Ronaldo", "equipo": "Portugal",
+     "sot_jugador": 3, "sot_equipo": 5, "n_titulares": 11},
+    {"player_id": "p1", "nombre": "Ronaldo", "equipo": "Portugal",
+     "sot_jugador": 2, "sot_equipo": 4, "n_titulares": 11},
+    {"player_id": "p2", "nombre": "Defensa", "equipo": "Portugal",
+     "sot_jugador": 0, "sot_equipo": 5, "n_titulares": 11},
+]
+
+
+def test_estimar_cuotas_sot_estructura_y_rango():
+    out = estimar_cuotas_sot(REGS_SOT, k=2.0)
+    assert set(out) == {"p1", "p2"}
+    assert out["p1"]["nombre"] == "Ronaldo"
+    assert out["p1"]["equipo"] == "Portugal"
+    # el que dispara al arco tiene cuota_sot mucho mayor
+    assert out["p1"]["cuota_sot"] > out["p2"]["cuota_sot"]
+    for v in out.values():
+        assert 0.0 < v["cuota_sot"] < 1.0
+        assert set(v) == {"nombre", "equipo", "cuota_sot"}   # sin cuota_gol/asist
+
+
+def test_estimar_cuotas_sot_min_partidos():
+    # p1 tiene 2 partidos, p2 tiene 1 -> min_partidos=2 deja solo p1
+    out = estimar_cuotas_sot(REGS_SOT, k=2.0, min_partidos=2)
+    assert set(out) == {"p1"}
+
+
+def test_estimar_cuotas_sot_excluye_sot_equipo_cero():
+    # partido con sot_equipo==0: share indefinido, no debe reventar; cae al prior con k>0
+    regs = [{"player_id": "pz", "nombre": "Z", "equipo": "W",
+             "sot_jugador": 0, "sot_equipo": 0, "n_titulares": 11}]
+    out = estimar_cuotas_sot(regs, k=2.0)
+    prior = 1.0 / 11
+    assert abs(out["pz"]["cuota_sot"] - prior) < 1e-9
