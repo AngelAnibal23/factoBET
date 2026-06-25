@@ -51,3 +51,14 @@ def test_jugador_sin_statistics_se_omite():
     resp = [{"team": {"id": 10, "name": "Portugal"},
              "players": [{"player": {"id": 1, "name": "X"}, "statistics": []}]}]
     assert parse_fixtures_players(resp, event_id=1) == []
+
+
+from download_sot_jugador import elegir_pendientes
+
+
+def test_elegir_pendientes_respeta_presupuesto():
+    prog = [{"event_id": i, "estado": "pendiente"} for i in range(10)]
+    prog += [{"event_id": 100, "estado": "hecho"}]
+    elegidos = elegir_pendientes(prog, presupuesto=3)
+    assert elegidos == [0, 1, 2]            # solo pendientes, hasta el presupuesto
+    assert elegir_pendientes(prog, presupuesto=0) == []
