@@ -32,13 +32,17 @@ def count_leg_prob(model, sel, home, away, neutral) -> float | None:
 PLAYER_MARKET = "player"   # props por-jugador (anota/asiste); sot va como faltante
 
 
-def player_leg_prob(model, sel, lh, la, home, away) -> float | None:
-    """Marginal de una pata player vía Poisson top-down. None si: es faltante,
-    no hay modelo, el nombre no resuelve, la métrica no está gateada, o no se
-    puede ubicar al jugador en el partido (sin λ de su equipo).
+def player_leg_prob(model, sel, lh, la, home, away,
+                    counts_model=None, c_home=None, c_away=None,
+                    neutral: bool = False) -> float | None:
+    """Marginal de una pata player vía Poisson top-down. None si: es faltante, no hay
+    modelo, el nombre no resuelve, la métrica no está gateada, o no se puede ubicar al
+    jugador / obtener el λ de su equipo.
 
-    home/away son los nombres CANÓNICOS de los equipos del partido (no equipo_id):
-    el modelo guarda el equipo del jugador por nombre canónico."""
+    Para goal/assist el λ del equipo es el de goles (lh/la). Para `sot` el λ del equipo
+    sale de counts_model.lambdas("sot", ...) (tiros al arco por-equipo), que aporta el
+    ajuste de enfrentamiento. home/away son los nombres CANÓNICOS; c_home/c_away son los
+    equipo_id (clave del counts_model)."""
     from rapidfuzz import fuzz
     if model is None or sel.faltante or not sel.player:
         return None
@@ -48,12 +52,18 @@ def player_leg_prob(model, sel, lh, la, home, away) -> float | None:
     equipo = model.equipo_de(pid)
     if equipo is None or home is None or away is None:
         return None
-    # ubicar al jugador en local/visitante por su equipo (fuzzy contra home/away)
     s_home = fuzz.token_set_ratio(equipo.lower(), home.lower())
     s_away = fuzz.token_set_ratio(equipo.lower(), away.lower())
     if max(s_home, s_away) < 60:
         return None
-    lam = lh if s_home >= s_away else la
+    es_local = s_home >= s_away
+    if sel.metric == "sot":
+        if counts_model is None or not counts_model.tiene("sot"):
+            return None
+        lhs, las = counts_model.lambdas("sot", c_home, c_away, neutral)
+        lam = lhs if es_local else las
+    else:
+        lam = lh if es_local else la
     return model.prob(pid, sel.metric, lam, umbral=sel.umbral)
 
 

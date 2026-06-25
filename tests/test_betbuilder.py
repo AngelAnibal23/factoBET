@@ -172,3 +172,41 @@ def test_player_baja_exoticas_y_faltante_se_etiqueta():
     assert res.n_modelables == 1
     assert res.n_exoticas == 1
     assert any("Ronaldo" in d for d in res.faltantes_desc)
+
+
+def test_player_leg_prob_sot_usa_counts_lambda():
+    import math
+    from types import SimpleNamespace
+    from player_model import PlayerModel
+    from counts_model import CountsModel
+    from betbuilder import player_leg_prob
+
+    player_sot = PlayerModel.from_params({"metricas": ["sot"], "jugadores": {
+        "p1": {"nombre": "Cristiano Ronaldo", "equipo": "Portugal", "cuota_sot": 0.40},
+    }})
+    # counts con sot: base_home=4, sin multiplicadores -> lambda_sot local = 4
+    counts = CountsModel.from_params({"sot": {
+        "base_home": 4.0, "base_away": 3.0, "factor_neutral": 1.0, "disp": 1.0,
+        "atk": {}, "def": {},
+    }})
+    sel = SimpleNamespace(metric="sot", faltante=False, player="Ronaldo",
+                          scope="total", seleccion="yes", linea=0.5, umbral=1)
+    # Ronaldo (Portugal) es local -> lambda_sot = 4.0 ; lam_jugador = 4.0*0.40 = 1.6
+    p = player_leg_prob(player_sot, sel, lh=1.2, la=0.9,
+                        home="Portugal", away="Spain",
+                        counts_model=counts, c_home="ID_POR", c_away="ID_SPA",
+                        neutral=False)
+    assert abs(p - (1 - math.exp(-1.6))) < 1e-9
+
+
+def test_player_leg_prob_sot_sin_counts_devuelve_none():
+    from types import SimpleNamespace
+    from player_model import PlayerModel
+    from betbuilder import player_leg_prob
+    player_sot = PlayerModel.from_params({"metricas": ["sot"], "jugadores": {
+        "p1": {"nombre": "Cristiano Ronaldo", "equipo": "Portugal", "cuota_sot": 0.40},
+    }})
+    sel = SimpleNamespace(metric="sot", faltante=False, player="Ronaldo",
+                          scope="total", seleccion="yes", linea=0.5, umbral=1)
+    assert player_leg_prob(player_sot, sel, 1.2, 0.9, "Portugal", "Spain",
+                           counts_model=None, c_home="A", c_away="B") is None
