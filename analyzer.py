@@ -629,6 +629,33 @@ def _load_player_model(liga_nombre: str):
     return model
 
 
+_cached_player_sot_model: dict = {}
+
+
+def _load_player_sot_model(liga_nombre: str):
+    """Carga el PlayerModel de tiros al arco (player_sot_v0.1) de una liga.
+    None si no hay params (mismo contrato que _load_player_model)."""
+    import json
+    from player_model import PlayerModel
+    if liga_nombre in _cached_player_sot_model:
+        return _cached_player_sot_model[liga_nombre]
+    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    liga = sb.table("ligas").select("id").eq("nombre", liga_nombre).execute().data
+    if not liga:
+        _cached_player_sot_model[liga_nombre] = None
+        return None
+    rows = (sb.table("parametros_modelo")
+            .select("notas")
+            .eq("liga_id", liga[0]["id"]).eq("version_modelo", "player_sot_v0.1")
+            .eq("is_production", True).execute().data)
+    if not rows:
+        _cached_player_sot_model[liga_nombre] = None
+        return None
+    model = PlayerModel.from_params(json.loads(rows[0]["notas"]))
+    _cached_player_sot_model[liga_nombre] = model
+    return model
+
+
 def _load_team_liga_map() -> dict[str, str]:
     """Mapa equipo_id -> "liga1" | "internacional" para rutear cada parlay."""
     global _cached_team_liga, _team_liga_ts
@@ -802,6 +829,7 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
         rho, version = model.rho, "intl_v0.1"
         counts = _load_counts_model("Internacional")
         player = _load_player_model("Internacional")
+        player_sot = _load_player_sot_model("Internacional")
         if match_sel:
             home = match_sel.local_match.canonical
             away = match_sel.visitante_match.canonical
@@ -817,6 +845,7 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
         rho, version = model.rho, "v0.2"
         counts = _load_counts_model("Liga 1 Peruana")
         player = _load_player_model("Liga 1 Peruana")
+        player_sot = _load_player_sot_model("Liga 1 Peruana")
         if match_sel:
             hid = match_sel.local_match.equipo_id
             aid = match_sel.visitante_match.equipo_id
@@ -829,7 +858,7 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
 
     return analyze_bet_builder(parlay, lh, la, rho, version, margin,
                                counts_model=counts, neutral=neutral_flag,
-                               player_model=player)
+                               player_model=player, player_sot_model=player_sot)
 
 
 def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
