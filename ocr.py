@@ -126,9 +126,9 @@ REGLAS ESTRICTAS:
     - "metric": "goal" (anota/marca gol) | "assist" (da asistencia) |
                 "goal_or_assist" (anota o asiste) | "sot" (tiros/remates al arco del jugador)
     - "umbral": el número mínimo de eventos (ej "2+ tiros al arco" -> 2 ; "anota" -> 1)
-    - "seleccion": "yes" ; "faltante": true SOLO si metric=="sot" (tiros al arco por jugador,
-      mercado conocido pero aún no modelable). Para goal/assist/goal_or_assist, "faltante": false.
-    Ejemplos: "Lionel Messi 1+ Tiros al Arco" -> player/sot/umbral 1/faltante true ;
+    - "seleccion": "yes" ; "faltante": false (todas las métricas player se intentan modelar;
+      si no hay datos para esa pata, el motor la marca faltante por su cuenta).
+    Ejemplos: "Lionel Messi 1+ Tiros al Arco" -> player/sot/umbral 1/faltante false ;
               "Bruno Fernandes anota o da una asistencia" -> player/goal_or_assist/umbral 1/faltante false ;
               "Cristiano Ronaldo marca" -> player/goal/umbral 1/faltante false
 4d. CLASIFICA COMO "exotic" SOLO lo no modelable que NO sea de jugador: goles/eventos de
