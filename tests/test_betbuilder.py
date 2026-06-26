@@ -210,3 +210,48 @@ def test_player_leg_prob_sot_sin_counts_devuelve_none():
                           scope="total", seleccion="yes", linea=0.5, umbral=1)
     assert player_leg_prob(player_sot, sel, 1.2, 0.9, "Portugal", "Spain",
                            counts_model=None, c_home="A", c_away="B") is None
+
+
+def _sel_sot(player="Cristiano Ronaldo"):
+    return ValidatedSelection(
+        equipo_local_raw="Portugal", equipo_visitante_raw="Spain",
+        mercado="player", seleccion="yes", cuota=None, linea=None,
+        local_match=_tm("Portugal"), visitante_match=_tm("Spain"),
+        prob_implicita=None, mercado_exotico=False,
+        player=player, metric="sot", umbral=1, faltante=False)
+
+
+def _counts_sot():
+    from counts_model import CountsModel
+    return CountsModel.from_params({"sot": {
+        "base_home": 4.0, "base_away": 3.0, "factor_neutral": 1.0, "disp": 1.0,
+        "atk": {}, "def": {}}})
+
+
+def _player_sot():
+    return PlayerModel.from_params({"metricas": ["sot"], "jugadores": {
+        "p1": {"nombre": "Cristiano Ronaldo", "equipo": "Portugal", "cuota_sot": 0.40}}})
+
+
+def test_analyze_bb_sot_resuelve_con_modelo():
+    parlay = ValidatedParlay(selecciones=[_sel_sot()], cuota_total=2.0,
+                             casa_apuestas="Betano")
+    res = analyze_bet_builder(parlay, lh=1.2, la=0.9, rho=-0.05,
+                              version_modelo="intl_v0.1", margin=0.0,
+                              counts_model=_counts_sot(), neutral=False,
+                              player_model=None, player_sot_model=_player_sot())
+    assert res.selecciones[0].prob_modelo is not None
+    assert res.selecciones[0].faltante is False
+    assert res.n_modelables == 1
+
+
+def test_analyze_bb_sot_faltante_si_no_modelo():
+    parlay = ValidatedParlay(selecciones=[_sel_sot()], cuota_total=2.0,
+                             casa_apuestas="Betano")
+    res = analyze_bet_builder(parlay, lh=1.2, la=0.9, rho=-0.05,
+                              version_modelo="intl_v0.1", margin=0.0,
+                              counts_model=_counts_sot(), neutral=False,
+                              player_model=None, player_sot_model=None)
+    assert res.selecciones[0].prob_modelo is None
+    assert res.selecciones[0].faltante is True
+    assert any("Ronaldo" in d for d in res.faltantes_desc)
