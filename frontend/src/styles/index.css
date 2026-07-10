@@ -378,6 +378,50 @@ body {
   color: var(--muted);
 }
 
+.loader-bar-track {
+  width: 220px;
+  height: 2px;
+  background: var(--card-deep);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.loader-bar-fill {
+  height: 100%;
+  background: var(--green);
+  transition: width 1s linear;
+}
+
+.loader-stages {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.loader-stages .stage {
+  color: var(--muted);
+  transition: color var(--t-med) var(--ease);
+}
+
+.loader-stages .stage.current { color: var(--text); }
+.loader-stages .stage.done    { color: var(--sub); }
+
+.stage-mark {
+  display: inline-block;
+  width: 14px;
+  color: inherit;
+}
+
+.loader-stages .stage.done .stage-mark { color: var(--green); }
+
+.upload-zone.is-loading {
+  opacity: .5;
+  pointer-events: none;
+}
+
 /* ── Results layout ──────────────────────────────────────────── */
 .results-wrap {
   max-width: 1080px;
