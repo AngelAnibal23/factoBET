@@ -220,7 +220,7 @@ body {
   font-size: 9px;
   color: var(--sub);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 2px 7px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -249,7 +249,7 @@ body {
 
 .preview-img {
   max-height: 160px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--border);
   object-fit: contain;
 }
@@ -267,7 +267,7 @@ body {
   color: var(--sub);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 9px 16px;
   cursor: pointer;
   margin-top: 10px;
@@ -368,12 +368,6 @@ body {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.spinner-text {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--sub);
-}
-
 .spinner-sub {
   font-family: var(--mono);
   font-size: 10px;
@@ -464,7 +458,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 12px 20px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid;
   min-width: 110px;
   flex-shrink: 0;
@@ -564,7 +558,7 @@ body {
   font-weight: 600;
   color: #000;
   background: var(--yellow);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 2px 6px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -662,7 +656,7 @@ body {
   color: var(--sub);
   background: var(--card-deep);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 2px 7px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -673,7 +667,7 @@ body {
   font-size: 9px;
   color: var(--text);
   background: var(--muted);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 2px 7px;
 }
 
@@ -683,14 +677,14 @@ body {
   font-weight: 600;
   color: var(--text);
   border: 1px solid var(--border-hi);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 2px 7px;
 }
 
 .badge-cob {
   font-family: var(--mono);
   font-size: 9px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 2px 7px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -800,7 +794,7 @@ body {
   grid-template-columns: 1fr 1fr 1fr;
   gap: 1px;
   background: var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow: hidden;
 }
 
@@ -828,7 +822,7 @@ body {
 /* ── Selection alerts ────────────────────────────────────────── */
 .sel-alerts {
   background: var(--red-lo);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -958,7 +952,7 @@ body {
   display: flex;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   overflow: hidden;
 }
 .bb-verdict-bar { width: 4px; flex-shrink: 0; }
@@ -1091,7 +1085,7 @@ body {
   display: flex;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   overflow: hidden;
 }
 .marcador-bar { width: 4px; flex-shrink: 0; background: var(--green); }
