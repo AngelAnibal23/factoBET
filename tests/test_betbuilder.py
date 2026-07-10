@@ -203,3 +203,11 @@ def test_player_baja_exoticas_y_faltante_se_etiqueta():
     assert res.n_modelables == 1
     assert res.n_exoticas == 1
     assert any("Ronaldo" in d for d in res.faltantes_desc)
+
+
+def test_joint_double_chance_con_over_misma_familia():
+    m = betbuilder.scoreline_matrix(1.4, 1.1, -0.1)
+    legs = [("double_chance", "home_draw", None), ("over_under", "over", 1.5)]
+    joint = betbuilder.joint_ceiling(m, legs)
+    marg = [betbuilder.marginal_prob(m, l) for l in legs]
+    assert 0 < joint <= min(marg) + 1e-12

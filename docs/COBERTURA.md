@@ -4,13 +4,13 @@
 > las patas que se van cubriendo. La fuente de verdad del código es `betbuilder.py`
 > (`GOAL_MARKETS` / `COUNT_MARKET` / `PLAYER_MARKET`); este archivo es el resumen humano.
 
-Última actualización: 2026-06-24
+Última actualización: 2026-07-10
 
 ## Familias modelables
 
 | Familia | Patas que cubre | Ligas | Modelo | Estado |
 |---|---|---|---|---|
-| **Goles** | 1X2 (gana/empata), más/menos goles (over/under), ambos anotan (BTTS), hándicap, resultado exacto | Liga 1 + Internacional | Dixon-Coles (matriz de marcadores) | ✅ Fase 1 |
+| **Goles** | 1X2 (gana/empata), más/menos goles (over/under), ambos anotan (BTTS), hándicap, resultado exacto, **doble oportunidad** (1X/X2/12) | Liga 1 + Internacional | Dixon-Coles (matriz de marcadores) | ✅ Fase 1 + quick win 2026-07-10 |
 | **Conteos (por equipo)** | tiros **por equipo**, tiros al arco **por equipo** | Mundial + Liga 1 | NegBin + shrinkage (`counts_v0.1`) | ✅ Sub-proyecto B |
 | **Jugador** | **anota** (goal), **asiste** (assist), **anota o asiste** (goal_or_assist) | Internacional (732 jugadores, ≥10 partidos) | Poisson top-down + shrinkage (`player_v0.1`) | ✅ **calibrado 2026-06-24** |
 
