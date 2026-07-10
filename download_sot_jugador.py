@@ -35,6 +35,7 @@ MANIFIESTO = [
     (4,  [2024]),            # Euro
     (5,  [2022, 2024]),      # Nations League
     (9,  [2024]),            # Copa America
+    (34, [2022]),            # WC Qualification CONMEBOL (ciclo 2020-2022; plan Free solo 2022-2024)
     # añadir clasificatorias/amistosos según presupuesto disponible
 ]
 
@@ -73,8 +74,10 @@ def descubrir(sb, key):
             rows = [{"event_id": f["fixture"]["id"], "liga_api_id": liga_id,
                      "temporada": season, "estado": "pendiente"} for f in fixtures]
             for i in range(0, len(rows), 100):
+                # ignore_duplicates: NO pisar estado de fixtures ya 'hecho'/'sin_datos'
                 sb.table("sot_backfill_progreso").upsert(
-                    rows[i:i+100], on_conflict="event_id").execute()
+                    rows[i:i+100], on_conflict="event_id",
+                    ignore_duplicates=True).execute()
             total += len(rows)
             print(f"  liga {liga_id} {season}: {len(rows)} fixtures | API rem {rem}")
             time.sleep(0.3)
