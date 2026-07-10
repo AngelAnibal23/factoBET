@@ -847,29 +847,87 @@ body {
   background: var(--card-deep);
 }
 
-/* ── Error banner ────────────────────────────────────────────── */
-.error-banner {
-  background: var(--red-lo);
-  border: 1px solid var(--red);
+/* ── Error state ─────────────────────────────────────────────── */
+.error-state {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--red);
   border-radius: var(--r);
-  padding: 20px 24px;
+  padding: 24px;
   margin: 40px auto;
   max-width: 560px;
 }
 
-.error-banner h3 {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--red);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.error-title {
+  font-family: var(--brand);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text);
   margin-bottom: 8px;
 }
 
-.error-banner p {
+.error-body {
   font-size: 13px;
   color: var(--sub);
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+.error-tips {
+  list-style: none;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.error-tips li {
+  font-size: 13px;
+  color: var(--text);
+  padding-left: 14px;
+  position: relative;
+}
+
+.error-tips li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--red);
+}
+
+.error-detail { margin-top: 14px; }
+
+.error-detail summary {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+}
+
+.error-detail p {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 6px;
+  word-break: break-word;
+}
+
+.error-detail-code {
+  color: var(--red);
+  opacity: .8;
+}
+
+.error-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  flex-wrap: wrap;
 }
 
 .btn-retry {

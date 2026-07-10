@@ -8,6 +8,7 @@ import BetBuilderVerdict from './components/BetBuilderVerdict.jsx'
 import SelectionCard from './components/SelectionCard.jsx'
 import CorrelationAlert from './components/CorrelationAlert.jsx'
 import Disclaimer from './components/Disclaimer.jsx'
+import ErrorState from './components/ErrorState.jsx'
 
 function LogoBars() {
   return (
@@ -30,8 +31,19 @@ export default function App() {
   const [apiError, setApiError] = useState(null)
 
   // Modo demo (?demo): carga el analisis real sin Gemini para verificacion visual.
+  // ?demo=error:CODIGO sintetiza esa variante de error localmente (sin fetch).
   useEffect(() => {
-    if (!new URLSearchParams(window.location.search).has('demo')) return
+    const demo = new URLSearchParams(window.location.search).get('demo')
+    if (demo === null) return
+    if (demo.startsWith('error:')) {
+      setApiError(new ApiError(
+        'Error simulado para verificación visual.',
+        demo.slice('error:'.length),
+        'Generado con ?demo=error:CODIGO — no hubo llamada al backend.',
+      ))
+      setState('error')
+      return
+    }
     setState('uploading')
     fetch('/api/v1/parlay/demo')
       .then(r => r.json())
@@ -106,14 +118,11 @@ export default function App() {
       )}
 
       {state === 'error' && (
-        <div className="error-banner">
-          <h3>{apiError?.code ?? 'Error'}</h3>
-          <p>{apiError?.message ?? 'Ocurrió un error inesperado.'}</p>
-          {apiError?.detalle && (
-            <p style={{ marginTop: 6, fontSize: '12px' }}>{apiError.detalle}</p>
-          )}
-          <button className="btn-retry" onClick={reset}>Intentar de nuevo</button>
-        </div>
+        <ErrorState
+          error={apiError}
+          onRetry={file ? handleSubmit : null}
+          onReset={reset}
+        />
       )}
 
       {state === 'result' && result && (
