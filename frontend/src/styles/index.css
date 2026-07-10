@@ -20,6 +20,27 @@
   --mono:      'IBM Plex Mono', monospace;
   --brand:     'Syne', sans-serif;
   --r:         8px;
+  --r-lg:      12px;
+  --r-sm:      6px;
+  --r-xs:      4px;
+  --ease:      cubic-bezier(.22,1,.36,1);
+  --t-fast:    .15s;
+  --t-med:     .3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+button:focus-visible,
+.upload-zone:focus-visible,
+.marcador-toggle:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
