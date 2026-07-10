@@ -104,9 +104,12 @@ Tu única tarea: extraer las selecciones del parlay que aparece en la imagen y d
 REGLAS ESTRICTAS:
 1. Responde SOLO con JSON válido. Cero texto antes o después.
 2. No inventes datos. Si un campo no está visible, usa null.
-3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, resultado_exacto, count, player, exotic
+3. Para "mercado" usa exactamente uno de: 1X2, over_under, btts, handicap, resultado_exacto, double_chance, count, player, exotic
 4. Para "seleccion":
    - 1X2: home, draw, away
+   - double_chance (Doble oportunidad): home_draw, draw_away, home_away.
+     "Empate o <equipo local>" -> home_draw ; "Empate o <equipo visitante>" -> draw_away ;
+     "<local> o <visitante>" (gana cualquiera) -> home_away. "linea": null.
    - over_under: over, under  (SOLO goles de partido completo)
    - btts: yes, no
    - handicap: home, away (el equipo con handicap)

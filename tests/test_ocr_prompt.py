@@ -37,3 +37,12 @@ def test_prompt_define_mercado_player_y_faltante():
     assert "player" in p
     assert "goal_or_assist" in p and "assist" in p
     assert "faltante" in p
+
+
+def test_prompt_documenta_double_chance():
+    from ocr import SYSTEM_PROMPT
+    assert "double_chance" in SYSTEM_PROMPT
+    for kw in ("home_draw", "draw_away", "home_away"):
+        assert kw in SYSTEM_PROMPT
+    # ancla en espanol para que Gemini reconozca el mercado en boletos peruanos
+    assert "oble oportunidad" in SYSTEM_PROMPT
