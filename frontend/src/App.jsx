@@ -118,15 +118,15 @@ export default function App() {
 
       {state === 'result' && result && (
         <div className="results-wrap">
-          <Ticket resumen={result.resumen} meta={meta} />
-
-          <MarcadorProbable marcadores={result.marcadores_partido} />
-
           {result.bet_builder && <BetBuilderVerdict data={result.bet_builder} />}
+
+          <Ticket resumen={result.resumen} meta={meta} />
 
           {result.resumen.tiene_correlaciones && (
             <CorrelationAlert correlaciones={result.correlaciones} />
           )}
+
+          <MarcadorProbable marcadores={result.marcadores_partido} />
 
           <p className="section-label">Selecciones ({result.selecciones.length})</p>
           <div className="sel-grid">
