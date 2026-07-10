@@ -1215,3 +1215,46 @@ body {
 .dot-local { background: var(--green); }
 .dot-draw  { background: var(--sub); }
 .dot-away  { background: var(--yellow); }
+
+/* ── Motion ──────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn { from { opacity: 0; } }
+
+.upload-screen,
+.error-state { animation: fadeUp var(--t-med) var(--ease) both; }
+
+/* Entrada escalonada de resultados (stagger corto, tope ~300ms). */
+.results-wrap > * { animation: fadeUp .28s var(--ease) both; }
+.results-wrap > :nth-child(2)    { animation-delay: .06s; }
+.results-wrap > :nth-child(3)    { animation-delay: .12s; }
+.results-wrap > :nth-child(4)    { animation-delay: .18s; }
+.results-wrap > :nth-child(5)    { animation-delay: .24s; }
+.results-wrap > :nth-child(n+6)  { animation-delay: .3s; }
+
+/* Gauges: llenan una vez al montar (scaleX, no width). */
+@keyframes gaugeIn { from { transform: scaleX(0); } }
+
+.gauge-fill-impl,
+.gauge-fill-mod {
+  transform-origin: left;
+  animation: gaugeIn .6s var(--ease) .25s both;
+}
+
+.gauge-pin { animation: fadeIn var(--t-med) var(--ease) .7s both; }
+
+.marcador-detalle { animation: fadeUp var(--t-med) var(--ease); }
+
+/* Hover sobrio: solo el borde, sin tocar el acento izquierdo. */
+.sel-card {
+  transition: border-color var(--t-fast);
+}
+
+.sel-card:hover {
+  border-top-color: var(--border-hi);
+  border-right-color: var(--border-hi);
+  border-bottom-color: var(--border-hi);
+}
