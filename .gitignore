@@ -9,3 +9,11 @@ intl_results.csv
 .venv-fbref/
 fbref_stats.csv
 flashscore_stats.csv
+*.log
+*.bak
+player_events*.csv
+downloaded_files/
+/*.jpeg
+/*.jpg
+/*.png
+boletos/
