@@ -170,3 +170,38 @@ def test_umbral_no_numerico_lanza_rangeerror():
     }
     with pytest.raises(RangeError):
         validate(ocr, teams=_TEAMS_PLAYER)
+
+
+_TEAMS_DC = [
+    {"id": "nl", "nombre_oficial": "Netherlands", "aliases": []},
+    {"id": "ma", "nombre_oficial": "Morocco", "aliases": []},
+]
+
+
+def _ocr_dc(seleccion, cuota):
+    return {
+        "selecciones": [
+            {"equipo_local": "Netherlands", "equipo_visitante": "Morocco",
+             "mercado": "double_chance", "seleccion": seleccion,
+             "cuota": cuota, "linea": None},
+        ],
+        "cuota_total": None, "casa_apuestas": "Betano",
+    }
+
+
+def test_double_chance_valida_pasa():
+    parlay = validate(_ocr_dc("draw_away", 1.35), teams=_TEAMS_DC)
+    s = parlay.selecciones[0]
+    assert s.mercado == "double_chance" and s.seleccion == "draw_away"
+
+
+def test_double_chance_seleccion_invalida_rechazada():
+    from validator import RangeError
+    with pytest.raises(RangeError):
+        validate(_ocr_dc("empate_o_marruecos", 1.35), teams=_TEAMS_DC)
+
+
+def test_double_chance_cuota_fuera_de_rango():
+    from validator import RangeError
+    with pytest.raises(RangeError):
+        validate(_ocr_dc("home_draw", 12.0), teams=_TEAMS_DC)

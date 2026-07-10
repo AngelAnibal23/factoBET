@@ -37,14 +37,16 @@ VALID_ODDS = {
     "btts":       (1.25,  4.5),
     "handicap":   (1.10, 10.0),
     "resultado_exacto": (1.5, 500.0),
+    "double_chance": (1.01, 8.0),
     "exotic":     (1.05, 200.0),
 }
 DEFAULT_ODDS_RANGE = (1.05, 200.0)
 
-VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "exotic", "count", "player"}
+VALID_MARKETS   = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "exotic", "count", "player", "double_chance"}
 VALID_SEL_1X2   = {"home", "draw", "away"}
 VALID_SEL_OU    = {"over", "under"}
 VALID_SEL_BTTS  = {"yes", "no"}
+VALID_SEL_DC    = {"home_draw", "draw_away", "home_away"}
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
@@ -308,6 +310,12 @@ def _gate_range(enriched: list[dict], es_bb: bool = False) -> None:
                 "VALIDATION_RANGE",
                 f"Selección {i}: valor '{sel}' no válido para btts.",
                 detail=f"Válidos: {VALID_SEL_BTTS}",
+            )
+        if mercado == "double_chance" and sel not in VALID_SEL_DC:
+            raise RangeError(
+                "VALIDATION_RANGE",
+                f"Selección {i}: valor '{sel}' no válido para double_chance.",
+                detail=f"Válidos: {VALID_SEL_DC}",
             )
         if mercado == "resultado_exacto":
             from betbuilder import parse_exact_score
