@@ -14,7 +14,7 @@ MAX_GOALS = 10
 KELLY_FRACTION = 0.20
 
 # Mercados que la familia "goles" puede valorar desde la matriz de marcadores.
-GOAL_MARKETS = {"1X2", "over_under", "btts", "handicap", "resultado_exacto"}
+GOAL_MARKETS = {"1X2", "over_under", "btts", "handicap", "resultado_exacto", "double_chance"}
 
 COUNT_MARKET = "count"   # mercado genérico de conteos (metric + scope en la selección)
 
@@ -94,6 +94,10 @@ def goal_leg_mask(mercado: str, seleccion: str, linea) -> np.ndarray:
         if seleccion == "home": return I > J
         if seleccion == "draw": return I == J
         if seleccion == "away": return I < J
+    elif mercado == "double_chance":
+        if seleccion == "home_draw": return I >= J
+        if seleccion == "draw_away": return I <= J
+        if seleccion == "home_away": return I != J
     elif mercado == "over_under":
         total = I + J
         if seleccion == "over":  return total > linea

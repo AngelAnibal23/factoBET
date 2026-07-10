@@ -54,6 +54,37 @@ def test_goal_leg_mask_exact():
     assert m[1, 3] and m.sum() == 1
 
 
+def test_double_chance_en_goal_markets():
+    assert "double_chance" in betbuilder.GOAL_MARKETS
+
+
+def test_goal_leg_mask_double_chance():
+    hd = betbuilder.goal_leg_mask("double_chance", "home_draw", None)
+    da = betbuilder.goal_leg_mask("double_chance", "draw_away", None)
+    ha = betbuilder.goal_leg_mask("double_chance", "home_away", None)
+    # celda (goles_local, goles_visita): (2,1)=gana local, (1,1)=empate, (0,2)=gana visita
+    assert hd[2, 1] and hd[1, 1] and not hd[0, 2]
+    assert da[0, 2] and da[1, 1] and not da[2, 1]
+    assert ha[2, 1] and ha[0, 2] and not ha[1, 1]
+
+
+def test_double_chance_es_suma_de_1x2():
+    m = betbuilder.scoreline_matrix(1.4, 1.1, -0.1)
+    p_home = betbuilder.marginal_prob(m, ("1X2", "home", None))
+    p_draw = betbuilder.marginal_prob(m, ("1X2", "draw", None))
+    p_away = betbuilder.marginal_prob(m, ("1X2", "away", None))
+    assert betbuilder.marginal_prob(m, ("double_chance", "home_draw", None)) == pytest.approx(p_home + p_draw)
+    assert betbuilder.marginal_prob(m, ("double_chance", "draw_away", None)) == pytest.approx(p_draw + p_away)
+    assert betbuilder.marginal_prob(m, ("double_chance", "home_away", None)) == pytest.approx(p_home + p_away)
+    # complementariedad: cubrir 2 resultados = 1 - el tercero
+    assert betbuilder.marginal_prob(m, ("double_chance", "home_draw", None)) == pytest.approx(1.0 - p_away)
+
+
+def test_goal_leg_mask_double_chance_seleccion_invalida():
+    with pytest.raises(ValueError):
+        betbuilder.goal_leg_mask("double_chance", "1X", None)
+
+
 def test_marginal_over_under_in_range():
     M = betbuilder.scoreline_matrix(1.4, 1.1, -0.05)
     marg = betbuilder.marginal_prob(M, ("over_under", "over", 1.5))
