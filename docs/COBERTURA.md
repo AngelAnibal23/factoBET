@@ -4,7 +4,7 @@
 > las patas que se van cubriendo. La fuente de verdad del código es `betbuilder.py`
 > (`GOAL_MARKETS` / `COUNT_MARKET` / `PLAYER_MARKET`); este archivo es el resumen humano.
 
-Última actualización: 2026-06-24
+Última actualización: 2026-07-09
 
 ## Familias modelables
 
@@ -18,9 +18,11 @@
 
 | Pata | Por qué falta | Camino |
 |---|---|---|
-| **Tiros al arco POR JUGADOR** (ej. "Messi 1+ tiros al arco") | El feed de Flashscore (`df_sui_1`) no trae tiros por jugador | Scraper nuevo a FBref (match logs por jugador) + modelo de conteos por-jugador — *capítulo futuro* |
+| **Tiros al arco POR JUGADOR** (ej. "Messi 1+ tiros al arco") | 🟡 **EN CURSO (Fase 2.1)**: código de serving listo en rama `feat/tiros-al-arco-por-jugador`; falta completar backfill (API-Football `/fixtures/players`) y gate final. Dry-runs del gate: +16% → +21% PASA | Terminar backfill (~4 ventanas de cuota) → gate → publicar `player_sot_v0.1`. Boletos que la piden: BET5 (Ronaldo), BET6 (Brahim Díaz) |
+| **Doble oportunidad** (ej. "Empate o Marruecos") | No está en `GOAL_MARKETS`; cae a exótico | **Quick win**: es P(X)+P(2) de la matriz DC ya calculada. Visto en BET6 |
 | Jugador en **Liga 1** (anota/asiste) | Sin probar; sparsity peor que Internacional | Re-correr gate con datos de Liga 1 |
-| Córners / faltas / tarjetas **por equipo** | Situacionales, no modelables per-equipo (verificado) | — (probablemente no se modela) |
+| Córners / faltas / tarjetas **por equipo** | Situacionales, no modelables per-equipo (verificado; reaparecen en boletos: córners totales en BET6, faltas por equipo en realbet4) | — (probablemente no se modela) |
+| **Acumulador multi-partido de bet builders** | Formato no soportado (composición multi-partido) | Diferido; 2ª aparición real en realbet4 (Doble con bet builder adentro) |
 | Patas de **otras familias exóticas** | El motor no las reconoce | Caso por caso |
 
 ## Cómo leer el veredicto
