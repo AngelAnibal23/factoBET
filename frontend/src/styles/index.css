@@ -96,7 +96,9 @@ body {
   display: none;
 }
 
-@media (min-width: 600px) { .logo-tag { display: block; } }
+@media (min-width: 640px) { .logo-tag { display: block; } }
+
+@media (max-width: 520px) { .status-pill { display: none; } }
 
 .status-pill {
   display: flex;
@@ -185,7 +187,7 @@ body {
 
 .upload-title {
   font-family: var(--brand);
-  font-size: 22px;
+  font-size: clamp(19px, 5vw, 22px);
   font-weight: 800;
   color: var(--text);
   margin-bottom: 8px;
@@ -266,7 +268,7 @@ body {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 14px;
+  padding: 9px 16px;
   cursor: pointer;
   margin-top: 10px;
   transition: border-color .15s, color .15s;
@@ -432,7 +434,10 @@ body {
   gap: 14px;
 }
 
-@media (max-width: 700px) { .results-wrap { padding: 16px 16px 48px; } }
+@media (max-width: 640px) {
+  .results-wrap { padding: 16px 16px 48px; }
+  .topbar { padding: 0 16px; }
+}
 
 /* ── Ticket ──────────────────────────────────────────────────── */
 .ticket {
@@ -503,11 +508,14 @@ body {
   min-width: 90px;
 }
 
-.ticket-metric:not(:last-child) { border-right: 1px solid var(--border); }
+/* Mobile-first: separador inferior en columna; en ancho pasa a lateral. */
+.ticket-metric:not(:last-child) { border-bottom: 1px solid var(--border); }
 
-@media (max-width: 640px) {
-  .ticket-metric { border-right: none !important; border-bottom: 1px solid var(--border); }
-  .ticket-metric:last-child { border-bottom: none; }
+@media (min-width: 640px) {
+  .ticket-metric:not(:last-child) {
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+  }
 }
 
 .tk-label {
@@ -1101,11 +1109,16 @@ body {
   color: var(--text);
   text-align: center;
 }
+
+@media (max-width: 400px) {
+  .marcador-team { font-size: 12px; }
+  .marcador-teams { gap: 10px; }
+}
 .marcador-teams .marcador-team:first-child { text-align: right; }
 .marcador-teams .marcador-team:last-child  { text-align: left; }
 .marcador-score {
   font-family: var(--brand);
-  font-size: 38px;
+  font-size: clamp(26px, 9vw, 38px);
   font-weight: 800;
   letter-spacing: .02em;
   color: var(--green);
@@ -1122,7 +1135,8 @@ body {
 .marcador-prob b { color: var(--text); font-size: 15px; }
 .marcador-toggle {
   display: block;
-  margin: 14px auto 0;
+  margin: 6px auto 0;
+  padding: 10px 14px;
   background: none;
   border: none;
   cursor: pointer;
