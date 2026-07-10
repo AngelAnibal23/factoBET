@@ -85,8 +85,11 @@ def descubrir(sb, key):
 
 
 def hidratar(sb, key, presupuesto):
+    # liga_api_id desc => primero 34 (quals CONMEBOL) y 9 (Copa América):
+    # densifica sudamericanos (Messi & co.) para el umbral >=10 del gate.
     prog = (sb.table("sot_backfill_progreso").select("event_id,estado")
-            .eq("estado", "pendiente").limit(presupuesto).execute().data)
+            .eq("estado", "pendiente").order("liga_api_id", desc=True)
+            .limit(presupuesto).execute().data)
     pendientes = elegir_pendientes(prog, presupuesto)
     mapa = {e["nombre_oficial"]: e["id"]
             for e in sb.table("equipos").select("id,nombre_oficial").execute().data}
