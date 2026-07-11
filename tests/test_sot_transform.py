@@ -73,7 +73,23 @@ def test_jugador_sin_statistics_se_omite():
     assert parse_fixtures_players(resp, event_id=1) == []
 
 
-from download_sot_jugador import elegir_pendientes
+from download_sot_jugador import elegir_pendientes, filas_descubrir
+
+
+def test_filas_descubrir_incluye_fecha():
+    # La fecha del partido viene de /fixtures (descubrir), NO de /fixtures/players:
+    # sin ella el gate no puede hacer split temporal (bug 2026-07-10: fecha 100% null).
+    fixtures = [
+        {"fixture": {"id": 555, "date": "2022-11-20T16:00:00+00:00"}},
+        {"fixture": {"id": 556, "date": "2022-11-21T13:00:00+00:00"}},
+    ]
+    rows = filas_descubrir(fixtures, liga_id=1, season=2022)
+    assert rows == [
+        {"event_id": 555, "liga_api_id": 1, "temporada": 2022,
+         "estado": "pendiente", "fecha": "2022-11-20T16:00:00+00:00"},
+        {"event_id": 556, "liga_api_id": 1, "temporada": 2022,
+         "estado": "pendiente", "fecha": "2022-11-21T13:00:00+00:00"},
+    ]
 
 
 def test_elegir_pendientes_respeta_presupuesto():

@@ -48,6 +48,15 @@ def elegir_pendientes(progreso: list[dict], presupuesto: int) -> list[int]:
     return [p["event_id"] for p in progreso if p["estado"] == "pendiente"][:presupuesto]
 
 
+def filas_descubrir(fixtures: list[dict], liga_id: int, season: int) -> list[dict]:
+    """Filas para sot_backfill_progreso desde /fixtures. Incluye fecha del partido
+    (fixture.date) — /fixtures/players no la trae y sin ella el gate no puede
+    hacer split temporal."""
+    return [{"event_id": f["fixture"]["id"], "liga_api_id": liga_id,
+             "temporada": season, "estado": "pendiente",
+             "fecha": f["fixture"]["date"]} for f in fixtures]
+
+
 def _api_get(endpoint, params, key):
     r = requests.get(f"{API_URL}/{endpoint}", headers={"x-apisports-key": key},
                      params=params, timeout=25)
@@ -71,13 +80,18 @@ def descubrir(sb, key):
     for liga_id, temporadas in MANIFIESTO:
         for season in temporadas:
             fixtures, rem = _api_get("fixtures", {"league": liga_id, "season": season}, key)
-            rows = [{"event_id": f["fixture"]["id"], "liga_api_id": liga_id,
-                     "temporada": season, "estado": "pendiente"} for f in fixtures]
+            rows = filas_descubrir(fixtures, liga_id, season)
             for i in range(0, len(rows), 100):
                 # ignore_duplicates: NO pisar estado de fixtures ya 'hecho'/'sin_datos'
                 sb.table("sot_backfill_progreso").upsert(
                     rows[i:i+100], on_conflict="event_id",
                     ignore_duplicates=True).execute()
+                # 2º pase solo-fecha: backfill de fecha en filas ya existentes
+                # (el upsert de arriba las saltó) sin tocar su estado.
+                solo_fecha = [{"event_id": r["event_id"], "fecha": r["fecha"]}
+                              for r in rows[i:i+100]]
+                sb.table("sot_backfill_progreso").upsert(
+                    solo_fecha, on_conflict="event_id").execute()
             total += len(rows)
             print(f"  liga {liga_id} {season}: {len(rows)} fixtures | API rem {rem}")
             time.sleep(0.3)
@@ -87,10 +101,11 @@ def descubrir(sb, key):
 def hidratar(sb, key, presupuesto):
     # liga_api_id desc => primero 34 (quals CONMEBOL) y 9 (Copa América):
     # densifica sudamericanos (Messi & co.) para el umbral >=10 del gate.
-    prog = (sb.table("sot_backfill_progreso").select("event_id,estado")
+    prog = (sb.table("sot_backfill_progreso").select("event_id,estado,fecha")
             .eq("estado", "pendiente").order("liga_api_id", desc=True)
             .limit(presupuesto).execute().data)
     pendientes = elegir_pendientes(prog, presupuesto)
+    fecha_de = {p["event_id"]: p.get("fecha") for p in prog}
     mapa = {e["nombre_oficial"]: e["id"]
             for e in sb.table("equipos").select("id,nombre_oficial").execute().data}
     print(f"  {len(pendientes)} pendientes a hidratar (presupuesto {presupuesto}).")
@@ -108,7 +123,7 @@ def hidratar(sb, key, presupuesto):
                          "player_nombre": f["player_nombre"],
                          "equipo_id": _resolver_equipo(f["equipo_nombre"], mapa),
                          "sot": f["sot"], "fue_titular": f["fue_titular"],
-                         "minutos": f["minutos"]})
+                         "minutos": f["minutos"], "fecha": fecha_de.get(eid)})
         sb.table("eventos_sot_jugador").upsert(rows, on_conflict="event_id,player_id").execute()
         sb.table("sot_backfill_progreso").update(
             {"estado": "hecho", "fecha_proceso": "now()"}).eq("event_id", eid).execute()
