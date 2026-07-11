@@ -47,6 +47,26 @@ def test_parse_estructura_y_sot():
     assert by_pid["100"]["minutos"] == 90
 
 
+def test_jugador_duplicado_en_feed_se_deduplica():
+    # Quirk real de API-Football: el mismo player_id puede venir dos veces en un
+    # fixture (visto en quals CONMEBOL 2026-07-10; rompía el upsert con error 21000).
+    # Se queda la entrada con más minutos.
+    resp = [{"team": {"id": 10, "name": "Portugal"},
+             "players": [
+                {"player": {"id": 7, "name": "CR7"},
+                 "statistics": [{"games": {"minutes": None, "substitute": True},
+                                 "shots": {"total": 0, "on": None}}]},
+                {"player": {"id": 7, "name": "CR7"},
+                 "statistics": [{"games": {"minutes": 90, "substitute": False},
+                                 "shots": {"total": 5, "on": 3}}]},
+             ]}]
+    filas = parse_fixtures_players(resp, event_id=1)
+    assert len(filas) == 1
+    assert filas[0]["sot"] == 3
+    assert filas[0]["minutos"] == 90
+    assert filas[0]["fue_titular"] is True
+
+
 def test_jugador_sin_statistics_se_omite():
     resp = [{"team": {"id": 10, "name": "Portugal"},
              "players": [{"player": {"id": 1, "name": "X"}, "statistics": []}]}]
