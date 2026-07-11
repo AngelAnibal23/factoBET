@@ -73,7 +73,26 @@ def test_jugador_sin_statistics_se_omite():
     assert parse_fixtures_players(resp, event_id=1) == []
 
 
-from download_sot_jugador import elegir_pendientes, filas_descubrir
+import pytest
+
+from download_sot_jugador import (ApiFootballError, chequear_errores_api,
+                                  elegir_pendientes, filas_descubrir)
+
+
+def test_chequear_errores_api_lanza_con_cuota_agotada():
+    # API-Football devuelve HTTP 200 con `errors` poblado cuando falla (cuota
+    # diaria, rate-limit). Sin este chequeo, hidratar marcaba 'sin_datos' los
+    # fixtures que en realidad no pudo consultar (2026-07-10: 90 falsos
+    # sin_datos con la cuota agotada; hubo que revertirlos a mano).
+    with pytest.raises(ApiFootballError, match="request limit"):
+        chequear_errores_api({"errors": {"requests": "You have reached the "
+                                         "request limit for the day"},
+                              "response": []})
+
+
+def test_chequear_errores_api_no_lanza_sin_errores():
+    chequear_errores_api({"errors": [], "response": [{"x": 1}]})   # lista vacía OK
+    chequear_errores_api({"response": []})                          # sin clave OK
 
 
 def test_filas_descubrir_incluye_fecha():

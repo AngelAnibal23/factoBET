@@ -57,12 +57,27 @@ def filas_descubrir(fixtures: list[dict], liga_id: int, season: int) -> list[dic
              "fecha": f["fixture"]["date"]} for f in fixtures]
 
 
+class ApiFootballError(RuntimeError):
+    """La API respondió 200 pero con `errors` poblado (cuota diaria, rate-limit)."""
+
+
+def chequear_errores_api(payload: dict):
+    """API-Football señala fallas con HTTP 200 + `errors` no vacío y `response`
+    vacío. Hay que abortar: si se sigue, hidratar confunde "no pude consultar"
+    con "fixture sin datos" (2026-07-10: 90 falsos sin_datos con cuota agotada)."""
+    err = payload.get("errors")
+    if err:
+        raise ApiFootballError(str(err))
+
+
 def _api_get(endpoint, params, key):
     r = requests.get(f"{API_URL}/{endpoint}", headers={"x-apisports-key": key},
                      params=params, timeout=25)
     r.raise_for_status()
+    j = r.json()
+    chequear_errores_api(j)
     remaining = r.headers.get("x-ratelimit-requests-remaining", "?")
-    return r.json().get("response", []), remaining
+    return j.get("response", []), remaining
 
 
 def _resolver_equipo(nombre, mapa_nombre_id):
@@ -111,7 +126,11 @@ def hidratar(sb, key, presupuesto):
     print(f"  {len(pendientes)} pendientes a hidratar (presupuesto {presupuesto}).")
     hechos = 0
     for eid in pendientes:
-        resp, rem = _api_get("fixtures/players", {"fixture": eid}, key)
+        try:
+            resp, rem = _api_get("fixtures/players", {"fixture": eid}, key)
+        except ApiFootballError as e:
+            print(f"  ⛔ API-Football: {e} — paro; los fixtures quedan pendientes.")
+            break
         filas = parse_fixtures_players(resp, eid)
         if not filas:
             sb.table("sot_backfill_progreso").update(
