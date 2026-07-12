@@ -1,6 +1,6 @@
 # Afinar cola elite del modelo por-jugador — diseño
 
-Fecha: 2026-07-11 · Rama: `feat/cola-elite` (desde master `c56d75e`) · Estado: aprobado por Angel
+Fecha: 2026-07-11 · Rama: `feat/cola-elite` (desde master `c56d75e`) · Estado: **EJECUTADO** (resultados al final)
 
 ## Problema
 
@@ -72,3 +72,26 @@ observada; equipo con 1 partido ≈ tirado hacia la media global; train vacío �
 borde sin crash. Para `_gate` con λ por-equipo: caso sintético donde un equipo fuerte
 y uno débil producen probabilidades distintas para jugadores de igual cuota. Suite
 completa verde antes de cada commit.
+
+## Resultados (2026-07-11, misma noche)
+
+**Paso A (`76393eb`):** λ por-equipo en gate y diagnóstico. Gate goal +6.9%→+7.4%,
+assist +4.1%→+3.9% (ambos pasan). Gap elite D10 +3.8→+2.8 pts, D9 +1.9→+1.3.
+Parte del gap era artefacto del proxy plano, pero D10 quedó fuera del ±1.5 → Paso B.
+
+**Paso B (`ae24d23`):** grid k ∈ {1,2,3,5,8,12}. El gap D10 es monótono en k:
++0.076 (k=12) → -0.030 (k=1); **k=3 lo deja en +0.003 con Brier goal idéntico**
+(0.0724) y assist casi igual (0.0821→0.0824). Decisión de Angel: k=3, desviándose
+conscientemente de la regla "solo si mejora Brier en ambas" porque el criterio de
+éxito elegido fue calibración elite y la tendencia es monótona (no ruido).
+Gate final: goal +7.3%, assist +3.5% — ambos pasan.
+
+**Publicación (`9085efd`):** `player_v0.2` (732 jugadores) publicado; versión
+sincronizada loader/analyzer con test anti-divergencia; v0.1 queda como rollback.
+E2E por el analyzer real: Messi P(anota|λ=1.4) 33.3%→35.0%, Kane 40.3%→41.8%,
+Lewandowski 35.3%→37.9% — subas moderadas y respaldadas por la tasa real, no
+infladas. Paso C NO fue necesario.
+
+Nota: `fit_player_sot.py` (rama SoT) define su propio K_SHRINK=5.0 — este cambio
+no afecta su gate; el aprendizaje (λ por-equipo + tunear k) se le aplica en su
+propia iteración.
