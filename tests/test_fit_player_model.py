@@ -87,3 +87,60 @@ def test_lambda_proxy_calibrado_a_tasa_real():
     # Tras el fix de datos la tasa real es ~1.05 goles/equipo; el proxy del gate
     # debe reflejarla (no el 1.35 viejo que sobre-predecía ~1.8x).
     assert fit_player_model.LAMBDA_PROXY <= 1.1
+
+
+# --- λ por-equipo en la medición (cola elite, Paso A) ---------------------
+# El proxy plano sub-predice a los elite (equipos que anotan >1.0/partido) y
+# sobre-predice a los de equipos débiles. lambdas_por_equipo estima la tasa
+# real de cada selección desde train, con shrinkage hacia la media global.
+
+from fit_player_model import lambdas_por_equipo
+
+
+def _reg_ev(eid, pid, equipo, gol, goles_eq, n_tit=11):
+    return {"event_id": eid, "player_id": pid, "nombre": pid, "equipo": equipo,
+            "goles_jugador": gol, "asist_jugador": 0,
+            "goles_equipo": goles_eq, "n_titulares": n_tit}
+
+
+def test_lambdas_por_equipo_media_sin_shrink():
+    # k=0 -> media exacta por equipo; filas repetidas del MISMO partido (una por
+    # titular) cuentan como UN partido, no once.
+    regs = [_reg_ev("A", "p1", "FRA", 1, 3), _reg_ev("A", "p2", "FRA", 0, 3),
+            _reg_ev("B", "p1", "FRA", 0, 1),
+            _reg_ev("C", "q1", "PAN", 0, 0)]
+    lams, lam_global = lambdas_por_equipo(regs, k=0.0)
+    assert lams["FRA"] == 2.0        # (3+1)/2, el partido A no se duplica por p2
+    assert lams["PAN"] == 0.0
+    assert abs(lam_global - 4 / 3) < 1e-9   # (3+1+0)/3 partidos
+
+
+def test_lambdas_por_equipo_shrink_hacia_global():
+    # Un equipo con 1 solo partido de 4 goles queda ENTRE la media global y su
+    # media propia, y con k grande se pega a la global.
+    regs = [_reg_ev(f"E{i}", "p", "MED", 0, 1) for i in range(8)]
+    regs.append(_reg_ev("X", "q", "NUEVO", 0, 4))
+    lams_k1, g = lambdas_por_equipo(regs, k=1.0)
+    lams_k9, _ = lambdas_por_equipo(regs, k=9.0)
+    assert g < lams_k9["NUEVO"] < lams_k1["NUEVO"] < 4.0
+
+
+def test_lambdas_por_equipo_vacio_cae_al_proxy():
+    lams, lam_global = lambdas_por_equipo([], k=5.0)
+    assert lams == {}
+    assert lam_global == fit_player_model.LAMBDA_PROXY
+
+
+def test_gate_distingue_equipo_fuerte_de_debil():
+    # Dos estrellas con la MISMA cuota (anotan todos los goles de su equipo),
+    # pero FUERTE mete 2/partido y DEBIL 1/partido. En test ambas anotan: la de
+    # FUERTE debía tener prob mayor -> Brier menor. Con el proxy plano ambas
+    # puntuarían igual. Aplica al modelo Y al baseline (comparación justa).
+    train = ([_reg_ev(f"F{i}", "star_f", "FUERTE", 2, 2) for i in range(6)]
+             + [_reg_ev(f"D{i}", "star_d", "DEBIL", 1, 1) for i in range(6)])
+    test_f = [_reg_ev("TF", "star_f", "FUERTE", 1, 2)]
+    test_d = [_reg_ev("TD", "star_d", "DEBIL", 1, 1)]
+    bm_f, bb_f = _gate(train, test_f, "goal", min_partidos=2)
+    bm_d, bb_d = _gate(train, test_d, "goal", min_partidos=2)
+    assert bm_f < bm_d
+    assert bb_f < bb_d
