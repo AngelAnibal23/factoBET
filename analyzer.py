@@ -604,9 +604,11 @@ def _load_counts_model(liga_nombre: str):
 
 _cached_player_model: dict = {}
 
+PLAYER_MODEL_VERSION = "player_v0.2"   # v0.2: k=3 (calibración cola elite)
+
 
 def _load_player_model(liga_nombre: str):
-    """Carga el PlayerModel de una liga desde parametros_modelo (player_v0.1).
+    """Carga el PlayerModel de una liga desde parametros_modelo (PLAYER_MODEL_VERSION).
     None si no hay params (mismo contrato que _load_counts_model)."""
     import json
     from player_model import PlayerModel
@@ -619,7 +621,7 @@ def _load_player_model(liga_nombre: str):
         return None
     rows = (sb.table("parametros_modelo")
             .select("notas")
-            .eq("liga_id", liga[0]["id"]).eq("version_modelo", "player_v0.1")
+            .eq("liga_id", liga[0]["id"]).eq("version_modelo", PLAYER_MODEL_VERSION)
             .eq("is_production", True).execute().data)
     if not rows:
         _cached_player_model[liga_nombre] = None
