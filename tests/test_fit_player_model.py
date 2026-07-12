@@ -89,6 +89,13 @@ def test_lambda_proxy_calibrado_a_tasa_real():
     assert fit_player_model.LAMBDA_PROXY <= 1.1
 
 
+def test_k_shrink_calibrado_a_cola_elite():
+    # Grid 2026-07-11 (con lambda por-equipo): k=5 dejaba gap +2.8 pts en el decil
+    # elite (D10) y k=3 lo cierra (+0.3) con Brier goal igual; k>=8 lo agranda.
+    # Decisión de Angel: k=3.
+    assert fit_player_model.K_SHRINK == 3.0
+
+
 # --- λ por-equipo en la medición (cola elite, Paso A) ---------------------
 # El proxy plano sub-predice a los elite (equipos que anotan >1.0/partido) y
 # sobre-predice a los de equipos débiles. lambdas_por_equipo estima la tasa

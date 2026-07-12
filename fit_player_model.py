@@ -19,7 +19,9 @@ from supabase import create_client
 from player_model import estimar_cuotas, PlayerModel
 
 GATE_MIN_MEJORA = 0.03
-K_SHRINK = 5.0
+K_SHRINK = 3.0        # grid 2026-07-11 con lambda por-equipo: k=3 cierra el gap del
+                      # decil elite (+2.8 -> +0.3 pts) con Brier goal igual; ver spec
+                      # docs/superpowers/specs/2026-07-11-cola-elite-design.md
 TEST_FRAC = 0.30
 MIN_PARTIDOS = 10     # historial mínimo (titular) para publicar/evaluar un jugador
 LAMBDA_PROXY = 1.0    # goles esperados por equipo (proxy de liga). Tasa real tras el
