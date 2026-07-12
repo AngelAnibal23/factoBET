@@ -5,5 +5,7 @@ rem ventana ya se uso, el script aborta con gracia (ApiFootballError) sin
 rem corromper sot_backfill_progreso. Log: hidratar_diario.log (gitignored).
 cd /d %~dp0
 echo ===== %date% %time% hidratar diario ===== >> hidratar_diario.log
-python download_sot_jugador.py hidratar >> hidratar_diario.log 2>&1
+rem -u: sin buffer de stdout; si python muere a mitad de corrida el log conserva
+rem las lineas ya impresas (2026-07-11: crash duro perdio todo el output).
+python -u download_sot_jugador.py hidratar >> hidratar_diario.log 2>&1
 echo. >> hidratar_diario.log
