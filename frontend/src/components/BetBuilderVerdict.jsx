@@ -30,7 +30,7 @@ export default function BetBuilderVerdict({ data }) {
 
       <div className="bb-verdict-body">
         <div className="bb-verdict-head">
-          <span className="bb-verdict-kicker">Bet Builder · veredicto por techo</span>
+          <span className="bb-verdict-kicker">Veredicto del modelo · techo del bet builder</span>
           <span
             className="bb-verdict-chip"
             style={{ background: meta.bg, borderColor: meta.color, color: meta.color }}

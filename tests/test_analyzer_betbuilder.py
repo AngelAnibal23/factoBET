@@ -178,3 +178,11 @@ def test_load_player_model_cache_hit_devuelve_none():
     import analyzer
     analyzer._cached_player_model["LigaInexistenteXYZ"] = None
     assert analyzer._load_player_model("LigaInexistenteXYZ") is None
+
+
+def test_version_player_model_sincronizada():
+    # El loader publica y el analyzer lee la MISMA versión; si divergen, el
+    # analyzer carga params viejos (o nada) en silencio. v0.2 = k=3 cola elite.
+    import analyzer
+    import load_player_model_to_supabase as loader
+    assert analyzer.PLAYER_MODEL_VERSION == loader.VERSION == "player_v0.2"

@@ -16,7 +16,7 @@ from supabase import create_client
 
 from fit_player_model import main as fit_main
 
-VERSION = "player_v0.1"
+VERSION = "player_v0.2"   # v0.2: k=3 (calibración cola elite) + gate con λ por-equipo
 LIGA_NOMBRE = "Internacional"
 
 
@@ -42,7 +42,7 @@ def main():
         "attack_params": {}, "defense_params": {}, "is_production": True,
         "notas": json.dumps(params),
     }).execute()
-    print(f"✅ player_v0.1 cargado: métricas {params['metricas']}, "
+    print(f"✅ {VERSION} cargado: métricas {params['metricas']}, "
           f"{len(params['jugadores'])} jugadores.")
 
 

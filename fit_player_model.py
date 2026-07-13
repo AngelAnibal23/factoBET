@@ -19,11 +19,38 @@ from supabase import create_client
 from player_model import estimar_cuotas, PlayerModel
 
 GATE_MIN_MEJORA = 0.03
-K_SHRINK = 5.0
+K_SHRINK = 3.0        # grid 2026-07-11 con lambda por-equipo: k=3 cierra el gap del
+                      # decil elite (+2.8 -> +0.3 pts) con Brier goal igual; ver spec
+                      # docs/superpowers/specs/2026-07-11-cola-elite-design.md
 TEST_FRAC = 0.30
 MIN_PARTIDOS = 10     # historial mínimo (titular) para publicar/evaluar un jugador
 LAMBDA_PROXY = 1.0    # goles esperados por equipo (proxy de liga). Tasa real tras el
                       # fix de datos ~1.05/equipo; el 1.35 viejo sobre-predecía ~1.8x.
+                      # Solo fallback: el gate usa lambdas_por_equipo (el proxy plano
+                      # sub-predecía la cola elite y sobre-predecía equipos débiles).
+K_LAMBDA = 5.0        # partidos virtuales hacia la media global en lambdas_por_equipo
+
+
+def lambdas_por_equipo(registros: list[dict], k: float = K_LAMBDA):
+    """Tasa de goles por partido de cada equipo, con shrinkage hacia la global.
+
+    registros vienen POR TITULAR (once filas por partido): se deduplica por
+    (event_id, equipo) para contar cada partido una vez. Devuelve
+    ({equipo: lambda}, lambda_global); lambda_global sirve de fallback para
+    equipos no vistos en train (y es LAMBDA_PROXY si no hay registros).
+    """
+    partidos = {}
+    for r in registros:
+        partidos[(r.get("event_id"), r["equipo"])] = r["goles_equipo"]
+    if not partidos:
+        return {}, LAMBDA_PROXY
+    lam_global = sum(partidos.values()) / len(partidos)
+    por_eq = defaultdict(list)
+    for (_, equipo), goles in partidos.items():
+        por_eq[equipo].append(goles)
+    lams = {eq: (sum(gs) + k * lam_global) / (len(gs) + k)
+            for eq, gs in por_eq.items()}
+    return lams, lam_global
 
 
 def registros_desde_eventos(eventos: list[dict], titulares: dict) -> list[dict]:
@@ -73,14 +100,16 @@ def _gate(train, test, metrica, min_partidos=MIN_PARTIDOS):
     diluirse con miles de jugadores de 1-2 partidos cuya cuota es ruido."""
     cuotas = estimar_cuotas(train, k=K_SHRINK, min_partidos=min_partidos)
     m = PlayerModel.from_params({"metricas": [metrica], "jugadores": cuotas})
+    lams, lam_global = lambdas_por_equipo(train)
     col = "goles_jugador" if metrica == "goal" else "asist_jugador"
     probs_m, probs_b, occ = [], [], []
     for r in test:
         pid = r["player_id"]
         if not m.tiene(pid, metrica):
             continue   # jugador no elegible: no se sirve, no se evalúa
-        probs_m.append(m.prob(pid, metrica, LAMBDA_PROXY, umbral=1))
-        probs_b.append(1 - np.exp(-LAMBDA_PROXY / r["n_titulares"]))
+        lam_eq = lams.get(r["equipo"], lam_global)
+        probs_m.append(m.prob(pid, metrica, lam_eq, umbral=1))
+        probs_b.append(1 - np.exp(-lam_eq / r["n_titulares"]))
         occ.append(1.0 if r[col] >= 1 else 0.0)
     return _brier(probs_m, occ), _brier(probs_b, occ)
 

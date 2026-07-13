@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_MB = 5
 
 function UploadIcon() {
   return (
@@ -16,18 +17,20 @@ function UploadIcon() {
 export default function UploadZone({ onFile, file, onSubmit, loading }) {
   const inputRef = useRef(null)
   const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState(null)
 
   function handleFiles(files) {
     const f = files[0]
     if (!f) return
     if (!ACCEPTED.includes(f.type)) {
-      alert('Solo se aceptan imágenes JPG, PNG o WEBP.')
+      setError('Formato no soportado. Usa JPG, PNG o WEBP.')
       return
     }
-    if (f.size > 5 * 1024 * 1024) {
-      alert('La imagen no puede superar 5 MB.')
+    if (f.size > MAX_MB * 1024 * 1024) {
+      setError(`La imagen pesa ${(f.size / 1024 / 1024).toFixed(1)} MB. El máximo es ${MAX_MB} MB.`)
       return
     }
+    setError(null)
     onFile(f)
   }
 
@@ -37,16 +40,38 @@ export default function UploadZone({ onFile, file, onSubmit, loading }) {
     handleFiles(e.dataTransfer.files)
   }
 
-  const previewUrl = file ? URL.createObjectURL(file) : null
+  function onDragLeave(e) {
+    if (e.currentTarget.contains(e.relatedTarget)) return
+    setDragOver(false)
+  }
+
+  function openPicker() {
+    setError(null)
+    inputRef.current.click()
+  }
+
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file])
+  useEffect(() => {
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }
+  }, [previewUrl])
 
   return (
     <div className="upload-wrap">
       <div
-        className={`upload-zone${dragOver ? ' drag-over' : ''}`}
+        className={`upload-zone${dragOver ? ' drag-over' : ''}${loading ? ' is-loading' : ''}`}
+        role="button"
+        tabIndex={0}
+        aria-label="Subir imagen del parlay"
+        onKeyDown={e => {
+          if ((e.key === 'Enter' || e.key === ' ') && !file) {
+            e.preventDefault()
+            openPicker()
+          }
+        }}
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
+        onDragLeave={onDragLeave}
         onDrop={onDrop}
-        onClick={() => !file && inputRef.current.click()}
+        onClick={() => !file && openPicker()}
       >
         <input
           ref={inputRef}
@@ -75,7 +100,7 @@ export default function UploadZone({ onFile, file, onSubmit, loading }) {
             <button
               type="button"
               className="btn-cta"
-              onClick={e => { e.stopPropagation(); inputRef.current.click() }}
+              onClick={e => { e.stopPropagation(); openPicker() }}
             >
               Seleccionar imagen
             </button>
@@ -100,6 +125,12 @@ export default function UploadZone({ onFile, file, onSubmit, loading }) {
           </div>
         )}
       </div>
+
+      {error && (
+        <div className="upload-error" role="alert" aria-live="polite">
+          {error}
+        </div>
+      )}
 
       <button
         className="btn-analizar"

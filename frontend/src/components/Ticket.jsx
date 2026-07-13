@@ -3,9 +3,9 @@ function pct(v) {
 }
 
 function barGradient(nivel) {
-  if (nivel === 'ALTA')  return 'linear-gradient(to right,#00df72 0%,#00df72 65%,#f5a623 100%)'
-  if (nivel === 'MEDIA') return 'linear-gradient(to right,#00df72 0%,#f5a623 45%,#f5a623 65%,#f04444 100%)'
-  return 'linear-gradient(to right,#f5a623 0%,#f04444 100%)'
+  if (nivel === 'ALTA')  return 'linear-gradient(to right,var(--green) 0%,var(--green) 65%,var(--yellow) 100%)'
+  if (nivel === 'MEDIA') return 'linear-gradient(to right,var(--green) 0%,var(--yellow) 45%,var(--yellow) 65%,var(--red) 100%)'
+  return 'linear-gradient(to right,var(--yellow) 0%,var(--red) 100%)'
 }
 
 const CONF_COLOR = { ALTA: 'var(--green)', MEDIA: 'var(--yellow)', BAJA: 'var(--red)' }

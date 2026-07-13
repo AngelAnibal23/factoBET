@@ -4,7 +4,12 @@
 > las patas que se van cubriendo. La fuente de verdad del código es `betbuilder.py`
 > (`GOAL_MARKETS` / `COUNT_MARKET` / `PLAYER_MARKET`); este archivo es el resumen humano.
 
-Última actualización: 2026-07-10
+Última actualización: 2026-07-12
+
+> **Foco de cobertura (decisión de Angel 2026-07-12):** la prioridad es el **Mundial**,
+> y después las competiciones **CONMEBOL en conjunto** (Copa América + eliminatorias
+> sudamericanas). **Liga 1 queda descartada como inversión futura** ("ya fue"): lo ya
+> construido (goles, conteos) se mantiene tal cual, pero no se le dedica trabajo nuevo.
 
 ## Familias modelables
 
@@ -12,14 +17,14 @@
 |---|---|---|---|---|
 | **Goles** | 1X2 (gana/empata), más/menos goles (over/under), ambos anotan (BTTS), hándicap, resultado exacto, **doble oportunidad** (1X/X2/12) | Liga 1 + Internacional | Dixon-Coles (matriz de marcadores) | ✅ Fase 1 + quick win 2026-07-10 |
 | **Conteos (por equipo)** | tiros **por equipo**, tiros al arco **por equipo** | Mundial + Liga 1 | NegBin + shrinkage (`counts_v0.1`) | ✅ Sub-proyecto B |
-| **Jugador** | **anota** (goal), **asiste** (assist), **anota o asiste** (goal_or_assist) | Internacional (732 jugadores, ≥10 partidos) | Poisson top-down + shrinkage (`player_v0.1`) | ✅ **calibrado 2026-06-24** |
+| **Jugador** | **anota** (goal), **asiste** (assist), **anota o asiste** (goal_or_assist) | Internacional (732 jugadores, ≥10 partidos) | Poisson top-down + shrinkage (`player_v0.2`, k=3) | ✅ calibrado 2026-06-24, **cola elite afinada 2026-07-11** |
 
 ## Pendiente (hoy se marca `FALTANTE` o `EXÓTICO`)
 
 | Pata | Por qué falta | Camino |
 |---|---|---|
-| **Tiros al arco POR JUGADOR** (ej. "Messi 1+ tiros al arco") | 🟡 **EN CURSO (Fase 2.1)**: código de serving listo en rama `feat/tiros-al-arco-por-jugador`; falta completar backfill (API-Football `/fixtures/players`) y gate final. Dry-runs del gate: +16% → +21% PASA | Terminar backfill (~4 ventanas de cuota) → gate → publicar `player_sot_v0.1`. Boletos que la piden: BET5 (Ronaldo), BET6 (Brahim Díaz) |
-| Jugador en **Liga 1** (anota/asiste) | Sin probar; sparsity peor que Internacional | Re-correr gate con datos de Liga 1 |
+| **Tiros al arco POR JUGADOR** (ej. "Messi 1+ tiros al arco") | 🟡 **EN CURSO (Fase 2.1)**: código de serving listo en rama `feat/tiros-al-arco-por-jugador`; backfill API-Football (`/fixtures/players`) al 96%, falta 1 ventana. Dry-run del gate con split temporal real: **+31.6% PASA** | Última ventana → gate definitivo → publicar `player_sot_v0.1` → mergear. Boletos que la piden: BET5 (Ronaldo), BET6 (Brahim Díaz) |
+| ~~Jugador en **Liga 1** (anota/asiste)~~ | **DESCARTADA 2026-07-12** — Liga 1 no interesa; foco Mundial + CONMEBOL | — |
 | Córners / faltas / tarjetas **por equipo** | Situacionales, no modelables per-equipo (verificado; reaparecen en boletos: córners totales en BET6, faltas por equipo en realbet4) | — (probablemente no se modela) |
 | **Acumulador multi-partido de bet builders** | Formato no soportado (composición multi-partido) | Diferido; 2ª aparición real en realbet4 (Doble con bet builder adentro) |
 | Patas de **otras familias exóticas** | El motor no las reconoce | Caso por caso |

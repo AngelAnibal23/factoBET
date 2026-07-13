@@ -1,11 +1,13 @@
 const MERCADO_LABEL = {
   '1X2': '1X2', over_under: 'Más/Menos', btts: 'Ambos marcan',
   handicap: 'Hándicap', count: 'Conteo', player: 'Jugador', exotic: 'Exótico',
+  double_chance: 'Doble oportunidad',
 }
 
 const SEL_LABEL = {
   home: 'Local', draw: 'Empate', away: 'Visitante',
   over: 'Más', under: 'Menos', yes: 'Sí', no: 'No',
+  home_draw: 'Local o Empate', draw_away: 'Empate o Visitante', home_away: 'Local o Visitante',
 }
 
 const COB_CLASS = { ALTA: 'alta', MEDIA: 'media', BAJA: 'baja', NULA: 'nula' }
