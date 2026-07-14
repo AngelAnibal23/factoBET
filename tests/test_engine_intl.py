@@ -209,6 +209,25 @@ def test_from_params_equipo_en_fit_ignora_elo():
     assert abs(lh - math.exp(0.2 + 0.5 + 0.1)) < 1e-9
 
 
+def test_from_params_par_mixto_usa_fuerza_del_conocido():
+    # Cambio deliberado vs v0.1: antes un desconocido colapsaba a AMBOS al
+    # promedio; ahora cada lado se resuelve solo (conocido = su alpha/beta).
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack={"A": 0.5}, defense={"A": -0.2})
+    lh, la = model.lambdas("A", "Z", neutral=True)   # Z desconocido sin ELO
+    assert abs(lh - math.exp(0.2 + 0.5 + 0.0)) < 1e-9   # alpha_A + beta_Z(0)
+    assert abs(la - math.exp(0.2 + 0.0 + (-0.2))) < 1e-9  # alpha_Z(0) + beta_A
+
+
+def test_from_params_par_mixto_con_elo_en_el_desconocido():
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.0, rho=-0.05,
+                                       attack={"A": 0.5}, defense={"A": -0.2},
+                                       elo_z={"Z": -1.0}, prior_scale=0.4)
+    lh, la = model.lambdas("A", "Z", neutral=True)
+    assert abs(lh - math.exp(0.2 + 0.5 + 0.4)) < 1e-9    # beta_Z = -0.4*(-1.0)
+    assert abs(la - math.exp(0.2 - 0.4 - 0.2)) < 1e-9    # alpha_Z = 0.4*(-1.0)
+
+
 from engine_intl_v01 import baseline_tasas, predecir_baseline
 
 

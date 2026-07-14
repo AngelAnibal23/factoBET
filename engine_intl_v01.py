@@ -264,7 +264,7 @@ class DixonColesIntl:
         model.converged = True   # cargado, no ajustado
         model.n_iter = 0
         model.elo_z = dict(elo_z) if elo_z else None
-        model.prior_scale = float(prior_scale)
+        model.prior_scale = float(prior_scale) if elo_z else 0.0
         return model
 
     def fit(self, matches, ref_date, elo_z=None, prior_scale=0.0, l2_prior=None):
@@ -335,7 +335,7 @@ class DixonColesIntl:
             return float(self.alphas[i]), float(self.betas[i])
         z = (self.elo_z or {}).get(team)
         if z is not None:
-            return self.prior_scale * z, -self.prior_scale * z
+            return float(self.prior_scale * z), float(-self.prior_scale * z)
         return 0.0, 0.0
 
     def lambdas(self, home, away, neutral):
