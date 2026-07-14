@@ -79,6 +79,8 @@ def calcular_elo(partidos: list[dict], hasta: str | None = None) -> dict[str, fl
 
 def estandarizar(valores: dict[str, float]) -> dict[str, float]:
     """z-scores sobre el conjunto dado. Es lo que consume el prior del DC."""
+    if not valores:
+        return {}
     vals = list(valores.values())
     media = sum(vals) / len(vals)
     var = sum((v - media) ** 2 for v in vals) / len(vals)

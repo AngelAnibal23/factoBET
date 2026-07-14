@@ -1,7 +1,7 @@
 """Tests de elo_intl: World Football Elo sobre el histórico martj42."""
 from elo_intl import (
     ELO_INICIAL, K_DEFAULT, k_torneo, multiplicador_goles, calcular_elo,
-    estandarizar, blend_z, cargar_partidos_elo,
+    estandarizar, blend_z, cargar_partidos_elo, cargar_z_fifa,
 )
 
 
@@ -69,6 +69,11 @@ def test_estandarizar_media_cero_y_orden():
     assert z["A"] > 0 > z["C"]
 
 
+def test_estandarizar_vacio_y_sd_cero():
+    assert estandarizar({}) == {}
+    assert estandarizar({"A": 1500.0}) == {"A": 0.0}   # sd=0 -> guard 'or 1.0'
+
+
 def test_blend_z_predominante_y_fallback():
     za = {"A": 1.0, "B": -1.0}
     zb = {"A": 0.0}
@@ -91,3 +96,12 @@ def test_cargar_partidos_elo_normaliza_y_ordena(tmp_path):
     assert partidos[0]["tournament"] == "Friendly"
     assert partidos[1]["neutral"] is True
     assert partidos[1]["gl"] == 3
+
+
+def test_cargar_z_fifa_none_sin_archivo_y_estandariza(tmp_path):
+    assert cargar_z_fifa(str(tmp_path / "no_existe.csv")) is None
+    p = tmp_path / "fifa.csv"
+    p.write_text("team,points\nArgentina,1800\nPeru,1500\n", encoding="utf-8")
+    z = cargar_z_fifa(str(p))
+    assert z["Argentina"] > 0 > z["Peru"]
+    assert abs(sum(z.values())) < 1e-9
