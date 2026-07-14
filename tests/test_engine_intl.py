@@ -2,6 +2,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import pytest
+
 from datetime import datetime, timezone
 
 from engine_intl_v01 import tau, brier_score, cargar_csv
@@ -282,3 +284,14 @@ def test_escala_c_desde_v01_recupera_pendiente():
     conteos = {"A": 50, "B": 40, "C": 35, "D": 5}   # D no elegible (<30)
     c = escala_c_desde_v01(model, z, conteos, min_partidos=30)
     assert abs(c - 0.3) < 1e-9
+
+
+def test_escala_c_desde_v01_falla_ruidoso_sin_elegibles():
+    z = {"A": 1.0, "B": -1.0}
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack={"A": 0.3, "B": -0.3},
+                                       defense={"A": -0.3, "B": 0.3})
+    with pytest.raises(ValueError):
+        escala_c_desde_v01(model, z, {"A": 5, "B": 5}, min_partidos=30)
+    with pytest.raises(ValueError):   # varianza z = 0
+        escala_c_desde_v01(model, {"A": 1.0, "B": 1.0}, {"A": 50, "B": 50}, min_partidos=30)

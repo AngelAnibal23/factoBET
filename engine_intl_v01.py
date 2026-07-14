@@ -357,7 +357,13 @@ def escala_c_desde_v01(model, elo_z, conteos, min_partidos=30):
             als.append(float(model.alphas[model.idx[t]]))
     zs, als = np.array(zs), np.array(als)
     dz = zs - zs.mean()
-    return float(np.dot(dz, als - als.mean()) / np.dot(dz, dz))
+    den = float(np.dot(dz, dz))
+    if not np.isfinite(den) or den < 1e-12:
+        raise ValueError(
+            f"escala_c_desde_v01: {len(zs)} equipos elegibles / varianza z insuficiente "
+            f"(min_partidos={min_partidos}); no se puede estimar c."
+        )
+    return float(np.dot(dz, als - als.mean()) / den)
 
 
 # ── Baseline ingenuo (tasas globales, neutral-aware) ──────────────────────────
