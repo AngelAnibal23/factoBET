@@ -195,3 +195,90 @@ def test_predecir_baseline_usa_neutral():
     tasas = {False: (0.5, 0.3, 0.2), True: (0.33, 0.34, 0.33)}
     assert predecir_baseline(tasas, neutral=False) == (0.5, 0.3, 0.2)
     assert predecir_baseline(tasas, neutral=True) == (0.33, 0.34, 0.33)
+
+
+# ── ELO prior (Fase 3) ────────────────────────────────────────────────────────
+
+from engine_intl_v01 import escala_c_desde_v01
+
+
+def test_gradiente_analitico_con_prior_elo():
+    # Mismo setup que test_gradiente_analitico_coincide_con_numerico pero con
+    # anclas alpha0/beta0 no-cero y l2 fuerte: el gradiente del prior también
+    # tiene que coincidir con diferencias finitas.
+    teams = ["A", "B", "C", "D"]
+    scores = [(0, 0), (1, 0), (0, 1), (1, 1), (2, 1), (3, 2), (0, 2), (2, 2)]
+    matches = []
+    for k, (gl, gv) in enumerate(scores):
+        matches.append({
+            "home": teams[k % 4], "away": teams[(k + 1) % 4],
+            "gl": gl, "gv": gv, "fecha": "2024-01-01", "neutral": (k % 2 == 0),
+        })
+    ref = datetime(2024, 3, 1, tzinfo=timezone.utc)
+    w = np.array([time_weight(m["fecha"], ref) for m in matches])
+    w /= w.mean()
+    a0 = np.array([0.3, -0.1, 0.2, 0.0])
+    b0 = np.array([-0.3, 0.1, -0.2, 0.0])
+    pre = precompute_matches(matches, teams, w, a0=a0, b0=b0)
+    n = len(teams)
+
+    np.random.seed(0)
+    x = np.random.randn(2 * n + 3) * 0.2
+    x[2*n], x[2*n + 1], x[2*n + 2] = 0.2, 0.3, -0.05
+
+    f = lambda p: neg_log_likelihood(p, pre, n, 2.0)   # l2_prior fuerte
+    g = lambda p: nll_and_grad(p, pre, n, 2.0)[1]
+    assert check_grad(f, g, x, epsilon=1.5e-8) < 1e-4
+
+
+def test_precompute_sin_anclas_es_cero():
+    # Backward compat: sin a0/b0, las anclas son 0 (comportamiento actual).
+    matches = [{"home": "A", "away": "B", "gl": 1, "gv": 0,
+                "fecha": "2024-01-01", "neutral": False}]
+    pre = precompute_matches(matches, ["A", "B"], np.array([1.0]))
+    assert np.allclose(pre["a0"], 0.0) and np.allclose(pre["b0"], 0.0)
+
+
+def test_fit_con_prior_fuerte_ancla_equipos_con_pocos_datos():
+    # 2 partidos y un prior fortísimo: los alphas quedan pegados al ancla c*z.
+    partidos = [
+        {"home": "A", "away": "B", "gl": 1, "gv": 1, "fecha": "2024-01-01",
+         "neutral": True, "resultado": "DRAW"},
+        {"home": "B", "away": "A", "gl": 1, "gv": 1, "fecha": "2024-02-01",
+         "neutral": True, "resultado": "DRAW"},
+    ]
+    ref = datetime(2024, 3, 1, tzinfo=timezone.utc)
+    elo_z = {"A": 2.0, "B": -2.0}
+    model = DixonColesIntl().fit(partidos, ref, elo_z=elo_z,
+                                 prior_scale=0.5, l2_prior=50.0)
+    ia, ib = model.idx["A"], model.idx["B"]
+    assert abs(model.alphas[ia] - 1.0) < 0.1    # ancla = 0.5*2.0
+    assert abs(model.alphas[ib] + 1.0) < 0.1
+    assert abs(model.betas[ia] + 1.0) < 0.1     # beta0 = -c*z
+    assert model.prior_scale == 0.5
+    assert model.elo_z == elo_z
+
+
+def test_fit_sin_elo_no_cambia_interfaz():
+    # El camino por defecto sigue funcionando y no guarda prior.
+    partidos = [
+        {"home": "A", "away": "B", "gl": 2, "gv": 1, "fecha": "2024-01-01",
+         "neutral": False, "resultado": "HOME"},
+    ]
+    ref = datetime(2024, 3, 1, tzinfo=timezone.utc)
+    model = DixonColesIntl().fit(partidos, ref)
+    assert model.elo_z is None
+    assert model.prior_scale == 0.0
+
+
+def test_escala_c_desde_v01_recupera_pendiente():
+    # Si los alphas del modelo son exactamente 0.3*z en los equipos elegibles,
+    # la regresión devuelve c=0.3.
+    z = {"A": 1.0, "B": -1.0, "C": 2.0, "D": 0.5}
+    attack = {t: 0.3 * z[t] for t in z}
+    defense = {t: -0.3 * z[t] for t in z}
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack=attack, defense=defense)
+    conteos = {"A": 50, "B": 40, "C": 35, "D": 5}   # D no elegible (<30)
+    c = escala_c_desde_v01(model, z, conteos, min_partidos=30)
+    assert abs(c - 0.3) < 1e-9

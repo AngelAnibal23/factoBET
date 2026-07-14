@@ -91,12 +91,15 @@ def brier_score(predictions):
 
 # ── Log-likelihood (gamma condicional a neutral) ──────────────────────────────
 
-def precompute_matches(matches, teams, weights):
+def precompute_matches(matches, teams, weights, a0=None, b0=None):
     """Convierte la lista de partidos a arrays numpy una sola vez.
 
     Los indices de equipo, goles, flag neutral y pesos son CONSTANTES durante
     toda la optimizacion (solo cambian los params), asi que se calculan aqui y
     se reutilizan en cada evaluacion de la verosimilitud.
+
+    a0/b0: anclas del prior ELO (alpha0/beta0), una por equipo en el mismo
+    orden que `teams`. None (default) = anclas en 0, comportamiento clasico.
     """
     idx = {t: i for i, t in enumerate(teams)}
     M = len(matches)
@@ -111,6 +114,11 @@ def precompute_matches(matches, teams, weights):
         x[k] = m["gl"]
         y[k] = m["gv"]
         not_neutral[k] = 0.0 if m["neutral"] else 1.0
+    n_teams = len(teams)
+    if a0 is None:
+        a0 = np.zeros(n_teams)
+    if b0 is None:
+        b0 = np.zeros(n_teams)
     return {
         "hi": hi, "aj": aj, "x": x, "y": y,
         "w": np.asarray(weights, dtype=np.float64),
@@ -122,6 +130,8 @@ def precompute_matches(matches, teams, weights):
         "m10": (x == 1) & (y == 0),
         "m01": (x == 0) & (y == 1),
         "m11": (x == 1) & (y == 1),
+        "a0": np.asarray(a0, dtype=np.float64),
+        "b0": np.asarray(b0, dtype=np.float64),
     }
 
 
@@ -132,6 +142,9 @@ def nll_and_grad(params, pre, n, l2=0.001):
     not_neutral == 1.0. El gradiente exacto evita el coste del gradiente
     numerico (~2n+3 evals por paso), permitiendo que L-BFGS-B converja de
     verdad en lugar de cortarse por maxfun.
+
+    `l2` penaliza la distancia a las anclas `pre['a0']/pre['b0']` (cero por
+    defecto = comportamiento clasico).
 
     Layout de params/grad: [alphas(n), betas(n), mu, gamma, rho].
     """
@@ -168,7 +181,9 @@ def nll_and_grad(params, pre, n, l2=0.001):
         + x * log_lh - lh - pre["lgx"]
         + y * log_la - la - pre["lgy"]
     ))
-    penalty = l2 * (np.dot(alphas, alphas) + np.dot(betas, betas))
+    da = alphas - pre["a0"]
+    db = betas  - pre["b0"]
+    penalty = l2 * (np.dot(da, da) + np.dot(db, db))
     nll = -ll + penalty
 
     # ── Gradiente de log tau respecto a log_lh, log_la y rho ──
@@ -208,8 +223,8 @@ def nll_and_grad(params, pre, n, l2=0.001):
     grad_beta  = np.bincount(aj, wG_lh, minlength=n) + np.bincount(hi, wG_la, minlength=n)
 
     # NLL = -ll + penalty  ->  signo negativo, mas derivada de la penalizacion L2
-    grad[:n]      = -grad_alpha + 2.0 * l2 * alphas
-    grad[n:2*n]   = -grad_beta  + 2.0 * l2 * betas
+    grad[:n]      = -grad_alpha + 2.0 * l2 * da
+    grad[n:2*n]   = -grad_beta  + 2.0 * l2 * db
     grad[2*n]     = -np.sum(wG_lh + wG_la)            # mu
     grad[2*n + 1] = -np.sum(wG_lh * nn)               # gamma (solo log_lh, condicional a neutral)
     grad[2*n + 2] = -np.sum(w * dT_drho)              # rho (solo via tau)
@@ -247,16 +262,31 @@ class DixonColesIntl:
         model.n_iter = 0
         return model
 
-    def fit(self, matches, ref_date):
+    def fit(self, matches, ref_date, elo_z=None, prior_scale=0.0, l2_prior=None):
+        """Ajusta el Dixon-Coles internacional.
+
+        elo_z: {equipo: z-score ELO} para anclar el prior (None = clasico).
+        prior_scale (c): ancla alpha0=c*z, beta0=-c*z.
+        l2_prior: fuerza del prior (pseudo-partidos); solo aplica si hay elo_z.
+        """
         self.teams = sorted(set(
             [m["home"] for m in matches] + [m["away"] for m in matches]
         ))
         n = len(self.teams)
         self.idx = {t: i for i, t in enumerate(self.teams)}
+        self.elo_z = dict(elo_z) if elo_z else None
+        self.prior_scale = float(prior_scale) if elo_z else 0.0
 
         weights = np.array([time_weight(m["fecha"], ref_date) for m in matches])
         weights /= weights.mean()
-        pre = precompute_matches(matches, self.teams, weights)
+        if elo_z:
+            z = np.array([elo_z.get(t, 0.0) for t in self.teams])
+            a0, b0 = prior_scale * z, -prior_scale * z
+            l2 = float(l2_prior) if l2_prior is not None else 0.001
+        else:
+            a0 = b0 = None
+            l2 = 0.001
+        pre = precompute_matches(matches, self.teams, weights, a0=a0, b0=b0)
 
         x0 = np.zeros(2 * n + 3)
         x0[2*n]     =  0.20   # mu
@@ -278,7 +308,7 @@ class DixonColesIntl:
         # (gradiente proyectado ~0, pero ||grad|| completo se mantiene > 0).
         result = minimize(
             nll_and_grad, x0,
-            args=(pre, n), jac=True,
+            args=(pre, n, l2), jac=True,
             method="L-BFGS-B", bounds=bounds,
             options={"maxiter": 20000, "ftol": 1e-12, "gtol": 1e-8},
         )
@@ -314,6 +344,20 @@ class DixonColesIntl:
                 else:        p_away += p
         total = p_home + p_draw + p_away
         return p_home / total, p_draw / total, p_away / total
+
+
+def escala_c_desde_v01(model, elo_z, conteos, min_partidos=30):
+    """Escala c del ancla: pendiente de la regresion alpha_hat ~ z sobre los
+    equipos BIEN muestreados del fit clasico. El dato fija c; el grid solo
+    decide la FUERZA del prior (l2_prior)."""
+    zs, als = [], []
+    for t in model.teams:
+        if conteos.get(t, 0) >= min_partidos and t in elo_z:
+            zs.append(elo_z[t])
+            als.append(float(model.alphas[model.idx[t]]))
+    zs, als = np.array(zs), np.array(als)
+    dz = zs - zs.mean()
+    return float(np.dot(dz, als - als.mean()) / np.dot(dz, dz))
 
 
 # ── Baseline ingenuo (tasas globales, neutral-aware) ──────────────────────────
