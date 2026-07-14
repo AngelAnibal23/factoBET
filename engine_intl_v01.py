@@ -242,13 +242,16 @@ def neg_log_likelihood(params, pre, n, l2=0.001):
 class DixonColesIntl:
 
     @classmethod
-    def from_params(cls, mu, gamma, rho, attack, defense):
+    def from_params(cls, mu, gamma, rho, attack, defense, elo_z=None, prior_scale=0.0):
         """Construye un predictor desde parametros congelados, SIN ajustar.
 
         Patron del Mundial (Sub-proyecto B): los params de produccion viven en
         `parametros_modelo` (Supabase) y se cargan tal cual; no se reajusta en
         cada warm_up como hace Liga 1. `attack`/`defense` son dicts
         {nombre_seleccion: valor}. Deben compartir el mismo conjunto de claves.
+
+        elo_z/prior_scale: mismo anclaje del prior que en `fit()`, usado en
+        `lambdas()` para sintetizar fuerza de equipos fuera del fit.
         """
         model = cls()
         model.teams = sorted(attack)
@@ -260,6 +263,8 @@ class DixonColesIntl:
         model.rho = float(rho)
         model.converged = True   # cargado, no ajustado
         model.n_iter = 0
+        model.elo_z = dict(elo_z) if elo_z else None
+        model.prior_scale = float(prior_scale)
         return model
 
     def fit(self, matches, ref_date, elo_z=None, prior_scale=0.0, l2_prior=None):
@@ -322,15 +327,23 @@ class DixonColesIntl:
         self.n_iter = result.nit
         return self
 
+    def _fuerza(self, team):
+        """(alpha, beta) del equipo. Si no está en el fit pero tiene ELO,
+        se sintetiza con el mismo mapeo del prior; si tampoco, (0,0) = promedio."""
+        if team in self.idx:
+            i = self.idx[team]
+            return float(self.alphas[i]), float(self.betas[i])
+        z = (self.elo_z or {}).get(team)
+        if z is not None:
+            return self.prior_scale * z, -self.prior_scale * z
+        return 0.0, 0.0
+
     def lambdas(self, home, away, neutral):
         g = 0.0 if neutral else self.gamma
-        if home in self.idx and away in self.idx:
-            i, j = self.idx[home], self.idx[away]
-            lh = math.exp(self.mu + self.alphas[i] + self.betas[j] + g)
-            la = math.exp(self.mu + self.alphas[j] + self.betas[i])
-        else:
-            lh = math.exp(self.mu + g)
-            la = math.exp(self.mu)
+        a_h, b_h = self._fuerza(home)
+        a_a, b_a = self._fuerza(away)
+        lh = math.exp(self.mu + a_h + b_a + g)
+        la = math.exp(self.mu + a_a + b_h)
         return lh, la
 
     def predict(self, home, away, neutral):

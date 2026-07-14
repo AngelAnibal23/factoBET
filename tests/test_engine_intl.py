@@ -176,6 +176,39 @@ def test_from_params_equipo_desconocido_cae_a_mu():
     assert abs(la - math.exp(0.2)) < 1e-9
 
 
+def test_from_params_equipo_fuera_del_fit_usa_elo():
+    model = DixonColesIntl.from_params(
+        mu=0.2, gamma=0.3, rho=-0.05,
+        attack={"A": 0.5}, defense={"A": -0.2},
+        elo_z={"A": 1.0, "Z": 1.5, "Y": -1.5}, prior_scale=0.4,
+    )
+    # Z e Y no están en el fit pero SÍ tienen ELO: alpha=c*z, beta=-c*z
+    lh, la = model.lambdas("Z", "Y", neutral=True)
+    assert abs(lh - math.exp(0.2 + 0.4 * 1.5 + (-0.4 * -1.5))) < 1e-9
+    assert abs(la - math.exp(0.2 + 0.4 * -1.5 + (-0.4 * 1.5))) < 1e-9
+    assert lh > la   # el de mejor ELO mete más
+
+
+def test_from_params_sin_elo_conserva_fallback_promedio():
+    # Sin tabla ELO, el desconocido cae a exp(mu) como siempre (cero regresión).
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack={"A": 0.5}, defense={"A": -0.2})
+    lh, la = model.lambdas("Z", "Y", neutral=True)
+    assert abs(lh - math.exp(0.2)) < 1e-9
+    assert abs(la - math.exp(0.2)) < 1e-9
+
+
+def test_from_params_equipo_en_fit_ignora_elo():
+    # Si el equipo está en el fit, manda su alpha ajustado, no el ELO.
+    model = DixonColesIntl.from_params(
+        mu=0.2, gamma=0.0, rho=-0.05,
+        attack={"A": 0.5, "B": -0.3}, defense={"A": -0.2, "B": 0.1},
+        elo_z={"A": -5.0, "B": 5.0}, prior_scale=0.4,   # ELO absurdo a propósito
+    )
+    lh, la = model.lambdas("A", "B", neutral=True)
+    assert abs(lh - math.exp(0.2 + 0.5 + 0.1)) < 1e-9
+
+
 from engine_intl_v01 import baseline_tasas, predecir_baseline
 
 
