@@ -44,6 +44,13 @@ def descargar_filtrar(url=CSV_URL, desde=DESDE, salida=SALIDA):
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    total, n = descargar_filtrar()
-    print(f"Descargados {total} partidos, {n} tras filtrar (>= {DESDE}, con marcador).")
-    print(f"Guardado en {SALIDA}")
+    if len(sys.argv) > 1 and sys.argv[1] == "elo":
+        # Histórico profundo para calcular ELO (desde 1990: ratings maduros
+        # al llegar a la era del modelo). NO pisa intl_results.csv.
+        total, n = descargar_filtrar(desde="1990-01-01", salida="intl_results_elo.csv")
+        print(f"Descargados {total} partidos, {n} tras filtrar (>= 1990, con marcador).")
+        print("Guardado en intl_results_elo.csv")
+    else:
+        total, n = descargar_filtrar()
+        print(f"Descargados {total} partidos, {n} tras filtrar (>= {DESDE}, con marcador).")
+        print(f"Guardado en {SALIDA}")
