@@ -139,10 +139,18 @@ def main():
         from engine_intl_v01 import conteo_partidos_train, evaluar_en_test, TOLERANCIA_GLOBAL, GATE_SPARSE_MIN
 
         c, l2p, variante = modo_elo
+        if variante not in ("elo_propio", "blend_fifa"):
+            sys.exit(f"variante desconocida: {variante!r} (usa elo_propio | blend_fifa)")
+        z_fifa = None
+        if variante == "blend_fifa":
+            z_fifa = cargar_z_fifa()
+            if z_fifa is None:
+                sys.exit("falta fifa_ranking.csv (variante blend_fifa)")
+
         partidos_elo = cargar_partidos_elo()
         z_train = estandarizar(calcular_elo(partidos_elo, hasta=TEST_DESDE))
         if variante == "blend_fifa":
-            z_train = blend_z(z_train, cargar_z_fifa(), w=0.7)
+            z_train = blend_z(z_train, z_fifa, w=0.7)
 
         ref = datetime.fromisoformat(TEST_DESDE).replace(tzinfo=timezone.utc)
         conteos = conteo_partidos_train(train)
@@ -150,6 +158,9 @@ def main():
         m_elo = DixonColesIntl().fit(train, ref, elo_z=z_train, prior_scale=c, l2_prior=l2p)
         bs_g0, bs_s0, _ = evaluar_en_test(m_v01, test, conteos)
         bs_g1, bs_s1, n_sp = evaluar_en_test(m_elo, test, conteos)
+        if bs_s0 is None:
+            print("  ❌ Sin partidos sparse en el test: el gate ELO no puede evaluarse. ABORTANDO.")
+            sys.exit(1)
         mejora_s = (bs_s0 - bs_s1) / bs_s0
         print(f"\n[gate ELO] global {bs_g1:.4f} vs {bs_g0:.4f} | "
               f"sparse {bs_s1:.4f} vs {bs_s0:.4f} ({mejora_s*100:+.1f}%, n={n_sp})")
@@ -167,7 +178,7 @@ def main():
         # ELO de produccion: SIN corte (todo el historico, lo mas fresco)
         elo_z_full = estandarizar(calcular_elo(partidos_elo))
         if variante == "blend_fifa":
-            elo_z_full = blend_z(elo_z_full, cargar_z_fifa(), w=0.7)
+            elo_z_full = blend_z(elo_z_full, z_fifa, w=0.7)
 
     print("\n" + "=" * 60)
     print(f"HELPBETOR — CARGA INTERNACIONAL A SUPABASE ({version})")
