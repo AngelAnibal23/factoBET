@@ -4,7 +4,7 @@
 > las patas que se van cubriendo. La fuente de verdad del código es `betbuilder.py`
 > (`GOAL_MARKETS` / `COUNT_MARKET` / `PLAYER_MARKET`); este archivo es el resumen humano.
 
-Última actualización: 2026-07-13
+Última actualización: 2026-07-16
 
 > **Foco de cobertura (decisión de Angel 2026-07-12):** la prioridad es el **Mundial**,
 > y después las competiciones **CONMEBOL en conjunto** (Copa América + eliminatorias
@@ -15,7 +15,7 @@
 
 | Familia | Patas que cubre | Ligas | Modelo | Estado |
 |---|---|---|---|---|
-| **Goles** | 1X2 (gana/empata), más/menos goles (over/under), ambos anotan (BTTS), hándicap, resultado exacto, **doble oportunidad** (1X/X2/12) | Liga 1 + Internacional | Dixon-Coles (matriz de marcadores) | ✅ Fase 1 + quick win 2026-07-10 |
+| **Goles** | 1X2 (gana/empata), más/menos goles (over/under), ambos anotan (BTTS), hándicap, resultado exacto, **doble oportunidad** (1X/X2/12) | Liga 1 + Internacional | Dixon-Coles (matriz de marcadores) | ✅ Fase 1 + quick win 2026-07-10. **Prior ELO (Fase 3.5, 2026-07-16): NO pasó el gate** — mejor variante `blend_fifa l2_prior=2-4` mejora global (0.2478 vs 0.2487) y sparse **+1.7%** pero el gate pedía ≥3% en sparse → sigue `intl_v0.1`; el código del prior quedó mergeado como no-op (sin publicar, `elo_params` NULL) |
 | **Conteos (por equipo)** | tiros **por equipo**, tiros al arco **por equipo** | Mundial + Liga 1 | NegBin + shrinkage (`counts_v0.1`) | ✅ Sub-proyecto B |
 | **Jugador** | **anota** (goal), **asiste** (assist), **anota o asiste** (goal_or_assist) | Internacional (732 jugadores, ≥10 partidos) | Poisson top-down + shrinkage (`player_v0.2`, k=3) | ✅ calibrado 2026-06-24, **cola elite afinada 2026-07-11** |
 | **Jugador — tiros al arco** (ej. "Messi 1+ tiros al arco") | **sot** (N+ tiros al arco, umbral) | Internacional (358 jugadores, ≥10 partidos; datos API-Football `/fixtures/players`) | Poisson top-down: λ_jugador = counts_model.λ_sot × cuota_sot (`player_sot_v0.1`) | ✅ **publicado 2026-07-13** — gate definitivo **+22.9%** (Brier 0.1566 vs 0.2033), e2e Messi OK. Boletos que la pedían: BET5 (Ronaldo), BET6 (Brahim Díaz) |
