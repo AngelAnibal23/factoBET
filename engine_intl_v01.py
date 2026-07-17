@@ -26,6 +26,13 @@ CSV_PATH = "intl_results.csv"
 TRAIN_HASTA = "2024-12-31"
 TEST_DESDE = "2025-01-01"
 
+# ── Gate ELO (Fase 3) ─────────────────────────────────────────────────────────
+UMBRAL_SPARSE = 45          # partidos en train (bottom ~23.5% del test, n=311/1325;
+                            # con 15 el segmento quedaba en n=36, por debajo del piso de 40)
+GRID_L2_PRIOR = [0.25, 0.5, 1.0, 2.0, 4.0]   # fuerza del prior (pseudo-partidos)
+TOLERANCIA_GLOBAL = 0.005   # el Brier global no puede empeorar mas de 0.5% rel
+GATE_SPARSE_MIN = 0.03      # mejora minima en el segmento sparse
+
 
 # ── Loader CSV ────────────────────────────────────────────────────────────────
 
@@ -401,6 +408,31 @@ def predecir_baseline(tasas, neutral):
     return tasas[neutral]
 
 
+def conteo_partidos_train(train):
+    """Partidos por equipo en el train (crudo; para segmentar el gate)."""
+    c = {}
+    for m in train:
+        c[m["home"]] = c.get(m["home"], 0) + 1
+        c[m["away"]] = c.get(m["away"], 0) + 1
+    return c
+
+
+def evaluar_en_test(model, test, conteos, umbral=UMBRAL_SPARSE):
+    """(brier_global, brier_sparse|None, n_sparse). Sparse = algun equipo del
+    partido tiene < umbral partidos en train."""
+    preds_all, preds_sparse = [], []
+    for m in test:
+        if m["resultado"] not in ("HOME", "DRAW", "AWAY"):
+            continue
+        pred = (*model.predict(m["home"], m["away"], m["neutral"]), m["resultado"])
+        preds_all.append(pred)
+        if min(conteos.get(m["home"], 0), conteos.get(m["away"], 0)) < umbral:
+            preds_sparse.append(pred)
+    bs_g = brier_score(preds_all)
+    bs_s = brier_score(preds_sparse) if preds_sparse else None
+    return bs_g, bs_s, len(preds_sparse)
+
+
 # ── Main: holdout temporal + gate de Brier ────────────────────────────────────
 
 def main():
@@ -462,6 +494,68 @@ def main():
         print("  NO cargar a Supabase. Reconsiderar (ponderacion por torneo, ventana).")
     print("=" * 60)
 
+    # ══ GATE ELO (Fase 3): DC+prior vs DC v0.1 — ver spec 2026-07-13 ══
+    try:
+        from elo_intl import cargar_partidos_elo, calcular_elo, estandarizar, blend_z, cargar_z_fifa
+        partidos_elo = cargar_partidos_elo()
+    except FileNotFoundError:
+        print("\n(gate ELO saltado: falta intl_results_elo.csv — `python download_intl_results.py elo`)")
+        return bs_modelo, bs_baseline, model
+
+    print("\n" + "=" * 60)
+    print("GATE ELO — prior vs DC v0.1 (rival = modelo actual, no baseline)")
+    print("=" * 60)
+
+    conteos = conteo_partidos_train(train)
+    dist = sorted(conteos.values())
+    print(f"  partidos/equipo en train: p10={dist[len(dist)//10]} "
+          f"p50={dist[len(dist)//2]} p90={dist[9*len(dist)//10]} | umbral sparse={UMBRAL_SPARSE}")
+
+    # ELO del train CON CORTE (anti-fuga: nada del test entra al prior)
+    z_propio = estandarizar(calcular_elo(partidos_elo, hasta=TEST_DESDE))
+    variantes = {"elo_propio": z_propio}
+    z_fifa = cargar_z_fifa()
+    if z_fifa is not None:
+        # c se calibra sobre z_propio; el blend tiene menor dispersion, asi que
+        # su prior efectivo es algo mas debil al mismo l2_prior (lo absorbe el grid)
+        variantes["blend_fifa"] = blend_z(z_propio, z_fifa, w=0.7)
+    else:
+        print("  (sin fifa_ranking.csv: variante blend_fifa no compite)")
+
+    c = escala_c_desde_v01(model, z_propio, conteos)
+    z_max = max(abs(v) for v in z_propio.values())
+    print(f"  escala c (regresión alpha~z, equipos >=30 partidos): {c:.4f}")
+    print(f"  max|c*z| = {abs(c)*z_max:.3f} (bound ±2.0)")
+
+    bs_g0, bs_s0, n_sp = evaluar_en_test(model, test, conteos)
+    if bs_s0 is None:
+        print("  ⚠ Sin partidos sparse en el test con este umbral — subir UMBRAL_SPARSE y re-correr.")
+        return bs_modelo, bs_baseline, model
+    print(f"  v0.1 (sin prior): global={bs_g0:.4f} sparse={bs_s0:.4f} (n={n_sp})")
+
+    candidatas = []
+    for nombre, z in variantes.items():
+        for l2p in GRID_L2_PRIOR:
+            m2 = DixonColesIntl().fit(train, ref_date, elo_z=z,
+                                      prior_scale=c, l2_prior=l2p)
+            bs_g, bs_s, _ = evaluar_en_test(m2, test, conteos)
+            ok_global = bs_g <= bs_g0 * (1.0 + TOLERANCIA_GLOBAL)
+            mejora_s = (bs_s0 - bs_s) / bs_s0
+            pasa = ok_global and mejora_s >= GATE_SPARSE_MIN
+            marca = "✅" if pasa else "❌"
+            print(f"  {nombre:12s} l2_prior={l2p:<5} global={bs_g:.4f} "
+                  f"sparse={bs_s:.4f} ({mejora_s*100:+.1f}%) {marca}")
+            if pasa:
+                candidatas.append((mejora_s, nombre, l2p, bs_g, bs_s))
+
+    if candidatas:
+        mejora_s, nombre, l2p, bs_g, bs_s = max(candidatas)
+        print(f"\n  🏆 GANADORA: {nombre} l2_prior={l2p} c={c:.4f} "
+              f"(sparse {mejora_s*100:+.1f}%, global {bs_g:.4f})")
+        print(f"  Siguiente paso: python load_intl_to_supabase.py {c:.4f} {l2p} {nombre}")
+    else:
+        print("\n  ❌ NINGUNA variante ELO pasa el gate. NO publicar; guardar diagnóstico.")
+    print("=" * 60)
     return bs_modelo, bs_baseline, model
 
 

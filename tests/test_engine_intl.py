@@ -347,3 +347,40 @@ def test_escala_c_desde_v01_falla_ruidoso_sin_elegibles():
         escala_c_desde_v01(model, z, {"A": 5, "B": 5}, min_partidos=30)
     with pytest.raises(ValueError):   # varianza z = 0
         escala_c_desde_v01(model, {"A": 1.0, "B": 1.0}, {"A": 50, "B": 50}, min_partidos=30)
+
+
+# ── Gate ELO (Fase 3) ─────────────────────────────────────────────────────────
+
+from engine_intl_v01 import conteo_partidos_train, evaluar_en_test
+
+
+def test_conteo_partidos_train():
+    train = [
+        {"home": "A", "away": "B"}, {"home": "A", "away": "C"},
+        {"home": "B", "away": "A"},
+    ]
+    c = conteo_partidos_train(train)
+    assert c == {"A": 3, "B": 2, "C": 1}
+
+
+def test_evaluar_en_test_separa_segmento_sparse():
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack={"A": 0.5, "B": -0.3, "C": 0.0},
+                                       defense={"A": -0.2, "B": 0.1, "C": 0.0})
+    test = [
+        {"home": "A", "away": "B", "neutral": True, "resultado": "HOME"},
+        {"home": "A", "away": "C", "neutral": True, "resultado": "DRAW"},
+    ]
+    conteos = {"A": 50, "B": 40, "C": 3}   # C es sparse
+    bs_g, bs_s, n_sparse = evaluar_en_test(model, test, conteos, umbral=15)
+    assert n_sparse == 1                    # solo el partido con C
+    assert 0.0 <= bs_g <= 1.0 and 0.0 <= bs_s <= 1.0
+
+
+def test_evaluar_en_test_sin_sparse_devuelve_none():
+    model = DixonColesIntl.from_params(mu=0.2, gamma=0.3, rho=-0.05,
+                                       attack={"A": 0.5, "B": -0.3},
+                                       defense={"A": -0.2, "B": 0.1})
+    test = [{"home": "A", "away": "B", "neutral": True, "resultado": "HOME"}]
+    bs_g, bs_s, n_sparse = evaluar_en_test(model, test, {"A": 50, "B": 50}, umbral=15)
+    assert bs_s is None and n_sparse == 0
