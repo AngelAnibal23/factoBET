@@ -161,6 +161,91 @@ def test_analyze_intl_marcador_dedupe_por_partido():
     assert len(res.marcadores_partido) == 1
 
 
+# ── Loader: fallback a esquema v0.1 sin columnas elo ──────────────────────────
+
+def test_load_intl_predictor_fallback_esquema_v01(monkeypatch):
+    """Si parametros_modelo NO tiene elo_params/prior_scale (DDL del loader v0.2
+    nunca corrido), el select nuevo da APIError 42703 -> reintenta con el select
+    viejo y el modelo carga sin prior. Cero regresion contra el esquema v0.1."""
+    from supabase import PostgrestAPIError
+
+    fila_v01 = {
+        "mu": 0.2, "gamma": 0.35, "rho": -0.05,
+        "attack_params": {"France": 0.6, "Brazil": 0.5},
+        "defense_params": {"France": -0.5, "Brazil": -0.4},
+    }
+    selects = []
+
+    class _FakeQuery:
+        def __init__(self, columnas):
+            self._columnas = columnas
+
+        def eq(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            selects.append(self._columnas)
+            if "elo_params" in self._columnas:
+                raise PostgrestAPIError({
+                    "message": "column parametros_modelo.elo_params does not exist",
+                    "code": "42703",
+                })
+            class _Res:
+                data = [fila_v01]
+            return _Res()
+
+    class _FakeClient:
+        def table(self, _nombre):
+            return self
+
+        def select(self, columnas):
+            return _FakeQuery(columnas)
+
+    monkeypatch.setenv("SUPABASE_URL", "http://fake")
+    monkeypatch.setenv("SUPABASE_KEY", "fake")
+    monkeypatch.setattr(analyzer, "create_client", lambda *_a, **_k: _FakeClient())
+    # cache limpio para forzar la carga (monkeypatch restaura los globals
+    # originales al terminar, el modelo fake no se filtra a otros tests)
+    monkeypatch.setattr(analyzer, "_cached_intl_model", None)
+    monkeypatch.setattr(analyzer, "_intl_cache_ts", None)
+    model = analyzer._load_intl_predictor()
+
+    assert len(selects) == 2                       # intento nuevo + fallback
+    assert "elo_params" in selects[0] and "elo_params" not in selects[1]
+    assert model.elo_z is None
+    assert model.prior_scale == 0.0
+    assert model.teams == ["Brazil", "France"]
+
+
+def test_load_intl_predictor_apierror_ajeno_propaga(monkeypatch):
+    """Un APIError que NO es columna-faltante (p.ej. RLS) debe propagarse."""
+    from supabase import PostgrestAPIError
+
+    class _FakeClient:
+        def table(self, _nombre):
+            return self
+
+        def select(self, _columnas):
+            return self
+
+        def eq(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            raise PostgrestAPIError({
+                "message": "permission denied for table parametros_modelo",
+                "code": "42501",
+            })
+
+    monkeypatch.setenv("SUPABASE_URL", "http://fake")
+    monkeypatch.setenv("SUPABASE_KEY", "fake")
+    monkeypatch.setattr(analyzer, "create_client", lambda *_a, **_k: _FakeClient())
+    monkeypatch.setattr(analyzer, "_cached_intl_model", None)
+    monkeypatch.setattr(analyzer, "_intl_cache_ts", None)
+    with pytest.raises(PostgrestAPIError):
+        analyzer._load_intl_predictor()
+
+
 # ── Rechazo de parlay mixto en el dispatch ─────────────────────────────────────
 
 def test_dispatch_mixto_lanza_error(monkeypatch):

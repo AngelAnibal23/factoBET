@@ -25,7 +25,7 @@ from typing import Optional
 import numpy as np
 from scipy.optimize import minimize
 from scipy.stats import poisson
-from supabase import create_client
+from supabase import create_client, PostgrestAPIError
 from dotenv import load_dotenv
 
 from validator import ValidatedParlay, ValidatedSelection
@@ -531,6 +531,30 @@ _cached_team_liga:  dict[str, str] | None  = None
 _team_liga_ts:      datetime | None        = None
 
 
+def _es_error_columna_faltante(exc: PostgrestAPIError) -> bool:
+    """True si PostgREST reporta que las columnas elo no existen (42703).
+
+    Esquema v0.1 (el loader v0.2 puede no haber corrido nunca): el select con
+    `elo_params, prior_scale` da 400/42703. Cualquier otro APIError no es de
+    esquema y debe propagarse tal cual.
+    """
+    if exc.code == "42703":
+        return True
+    msg = (exc.message or "").lower()
+    return "column" in msg and ("elo_params" in msg or "prior_scale" in msg)
+
+
+def _select_intl_params(sb, columnas: str) -> list[dict]:
+    return (
+        sb.table("parametros_modelo")
+        .select(columnas)
+        .eq("liga_id", LIGA_INTERNACIONAL_ID)
+        .eq("is_production", True)
+        .execute()
+        .data
+    )
+
+
 def _load_intl_predictor() -> DixonColesIntl:
     """Carga el predictor internacional desde parametros_modelo (is_production).
 
@@ -545,14 +569,16 @@ def _load_intl_predictor() -> DixonColesIntl:
     )
     if expired:
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-        rows = (
-            sb.table("parametros_modelo")
-            .select("mu, gamma, rho, attack_params, defense_params, elo_params, prior_scale")
-            .eq("liga_id", LIGA_INTERNACIONAL_ID)
-            .eq("is_production", True)
-            .execute()
-            .data
-        )
+        try:
+            rows = _select_intl_params(
+                sb, "mu, gamma, rho, attack_params, defense_params, elo_params, prior_scale"
+            )
+        except PostgrestAPIError as exc:
+            if not _es_error_columna_faltante(exc):
+                raise
+            # Esquema v0.1 sin columnas elo -> select viejo; r.get() abajo
+            # devuelve None y el modelo carga sin prior (cero regresion).
+            rows = _select_intl_params(sb, "mu, gamma, rho, attack_params, defense_params")
         if not rows:
             raise RuntimeError(
                 "No hay parametros_modelo de produccion para la liga Internacional. "
