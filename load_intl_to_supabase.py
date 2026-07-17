@@ -44,6 +44,13 @@ MGMT_URL = f"https://api.supabase.com/v1/projects/{PROJECT_REF}/database/query"
 GATE_MIN_MEJORA = 0.03   # mismo umbral que el gate del motor
 
 
+def parsear_args(argv):
+    """(c, l2_prior, variante) o None para el modo clasico v0.1."""
+    if len(argv) < 4:
+        return None
+    return float(argv[1]), float(argv[2]), argv[3]
+
+
 # ── DDL via Management API ────────────────────────────────────────────────────
 
 def run_ddl(sql):
@@ -106,22 +113,65 @@ def rechequear_gate(train, test):
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
-    print("\n" + "=" * 60)
-    print("HELPBETOR — CARGA INTERNACIONAL A SUPABASE (intl_v0.1)")
-    print("=" * 60)
 
     partidos = cargar_csv()
     train = [m for m in partidos if m["fecha"] <= TRAIN_HASTA]
     test  = [m for m in partidos if m["fecha"] >= TEST_DESDE]
 
-    # ── GATE defensivo: si no pasa, no se carga nada ──
-    print(f"\n[gate] Re-chequeando Brier (train {len(train)} / test {len(test)})...")
-    bs_m, bs_b, mejora = rechequear_gate(train, test)
-    print(f"  Brier modelo={bs_m:.4f}  baseline={bs_b:.4f}  mejora={mejora*100:+.1f}%")
-    if not (bs_m < bs_b and mejora >= GATE_MIN_MEJORA):
-        print("  ❌ NO PASA el gate. ABORTANDO carga (Supabase intacto).")
-        sys.exit(1)
-    print("  ✅ GREENLIGHT — se procede a cargar.")
+    modo_elo = parsear_args(sys.argv)
+    if modo_elo is None:
+        # ── Modo clasico v0.1 (rollback): gate vs baseline ingenuo, como siempre ──
+        print(f"\n[gate] Re-chequeando Brier v0.1 (train {len(train)} / test {len(test)})...")
+        bs_m, bs_b, mejora = rechequear_gate(train, test)
+        print(f"  Brier modelo={bs_m:.4f}  baseline={bs_b:.4f}  mejora={mejora*100:+.1f}%")
+        if not (bs_m < bs_b and mejora >= GATE_MIN_MEJORA):
+            print("  ❌ NO PASA el gate. ABORTANDO carga (Supabase intacto).")
+            sys.exit(1)
+        version, elo_z_full, c, l2p = "intl_v0.1", None, 0.0, None
+        gate_desc = (
+            f"Brier validado en holdout temporal train<={TRAIN_HASTA[:4]}/test{TEST_DESDE[:4]}+ "
+            f"= {bs_m:.4f} ({mejora*100:+.1f}% vs baseline {bs_b:.4f})."
+        )
+        print("  ✅ GREENLIGHT — se procede a cargar.")
+    else:
+        # ── Modo ELO v0.2: gate defensivo vs DC v0.1 (replica exacta del gate) ──
+        from elo_intl import cargar_partidos_elo, calcular_elo, estandarizar, blend_z, cargar_z_fifa
+        from engine_intl_v01 import conteo_partidos_train, evaluar_en_test, TOLERANCIA_GLOBAL, GATE_SPARSE_MIN
+
+        c, l2p, variante = modo_elo
+        partidos_elo = cargar_partidos_elo()
+        z_train = estandarizar(calcular_elo(partidos_elo, hasta=TEST_DESDE))
+        if variante == "blend_fifa":
+            z_train = blend_z(z_train, cargar_z_fifa(), w=0.7)
+
+        ref = datetime.fromisoformat(TEST_DESDE).replace(tzinfo=timezone.utc)
+        conteos = conteo_partidos_train(train)
+        m_v01 = DixonColesIntl().fit(train, ref)
+        m_elo = DixonColesIntl().fit(train, ref, elo_z=z_train, prior_scale=c, l2_prior=l2p)
+        bs_g0, bs_s0, _ = evaluar_en_test(m_v01, test, conteos)
+        bs_g1, bs_s1, n_sp = evaluar_en_test(m_elo, test, conteos)
+        mejora_s = (bs_s0 - bs_s1) / bs_s0
+        print(f"\n[gate ELO] global {bs_g1:.4f} vs {bs_g0:.4f} | "
+              f"sparse {bs_s1:.4f} vs {bs_s0:.4f} ({mejora_s*100:+.1f}%, n={n_sp})")
+        if not (bs_g1 <= bs_g0 * (1.0 + TOLERANCIA_GLOBAL) and mejora_s >= GATE_SPARSE_MIN):
+            print("  ❌ NO PASA el gate ELO. ABORTANDO carga (Supabase intacto).")
+            sys.exit(1)
+        bs_m = bs_g1   # se guarda como brier_score de la version
+        print("  ✅ GREENLIGHT ELO — se procede a cargar intl_v0.2.")
+        version = "intl_v0.2"
+        gate_desc = (
+            f"Brier validado en holdout temporal train<={TRAIN_HASTA[:4]}/test{TEST_DESDE[:4]}+ "
+            f"= global {bs_g1:.4f} (vs v0.1 {bs_g0:.4f}), sparse {bs_s1:.4f} vs {bs_s0:.4f} "
+            f"({mejora_s*100:+.1f}%, n={n_sp})."
+        )
+        # ELO de produccion: SIN corte (todo el historico, lo mas fresco)
+        elo_z_full = estandarizar(calcular_elo(partidos_elo))
+        if variante == "blend_fifa":
+            elo_z_full = blend_z(elo_z_full, cargar_z_fifa(), w=0.7)
+
+    print("\n" + "=" * 60)
+    print(f"HELPBETOR — CARGA INTERNACIONAL A SUPABASE ({version})")
+    print("=" * 60)
 
     sb = create_client(SUPA_URL, SUPA_KEY)
 
@@ -129,6 +179,8 @@ def main():
     print("\n[1/5] DDL: columna neutral + tabla parametros_modelo...")
     run_ddl("ALTER TABLE partidos ADD COLUMN IF NOT EXISTS neutral BOOLEAN DEFAULT false;")
     run_ddl(DDL_PARAMETROS)
+    run_ddl("ALTER TABLE parametros_modelo ADD COLUMN IF NOT EXISTS elo_params JSONB;")
+    run_ddl("ALTER TABLE parametros_modelo ADD COLUMN IF NOT EXISTS prior_scale NUMERIC(10,6);")
 
     # ── Paso 2: liga Internacional (idempotente por nombre) ──
     print("[2/5] Liga 'Internacional'...")
@@ -179,7 +231,11 @@ def main():
     # ── Paso 5: parametros_modelo (produccion = fit sobre TODO el dataset) ──
     print("[5/5] Ajustando modelo de produccion (todo el dataset) y guardando params...")
     ref_prod = datetime.now(tz=timezone.utc)
-    modelo = DixonColesIntl().fit(partidos, ref_prod)
+    if elo_z_full is not None:
+        modelo = DixonColesIntl().fit(partidos, ref_prod, elo_z=elo_z_full,
+                                      prior_scale=c, l2_prior=l2p)
+    else:
+        modelo = DixonColesIntl().fit(partidos, ref_prod)
     if not modelo.converged:
         print("  ⚠ ADVERTENCIA: el fit de produccion reporto Convergio=False.")
 
@@ -190,9 +246,17 @@ def main():
 
     # una sola fila is_production=true por liga
     sb.table("parametros_modelo").update({"is_production": False}).eq("liga_id", liga_id).execute()
+    notas = (
+        f"Dixon-Coles internacional (gamma condicional a neutral). "
+        f"Produccion ajustada sobre todo el dataset ({temporada_fit}). "
+        f"{gate_desc}"
+    )
+    if version == "intl_v0.2":
+        notas = f"PRIOR ELO ({variante}, c={c:.4f}, l2_prior={l2p}). " + notas
+
     sb.table("parametros_modelo").insert({
         "liga_id":        liga_id,
-        "version_modelo": "intl_v0.1",
+        "version_modelo": version,
         "temporada_fit":  temporada_fit,
         "mu":             float(modelo.mu),
         "gamma":          float(modelo.gamma),
@@ -200,18 +264,15 @@ def main():
         "xi":             XI,
         "attack_params":  attack,
         "defense_params": defense,
+        "elo_params":     modelo.elo_z,          # None en modo clasico
+        "prior_scale":    modelo.prior_scale,
         "brier_score":    round(bs_m, 6),
         "n_matches_fit":  len(partidos),
         "n_matches_val":  len(test),
         "is_production":  True,
-        "notas": (
-            f"Dixon-Coles internacional (gamma condicional a neutral). "
-            f"Produccion ajustada sobre todo el dataset ({temporada_fit}). "
-            f"Brier validado en holdout temporal train<={TRAIN_HASTA[:4]}/test{TEST_DESDE[:4]}+ "
-            f"= {bs_m:.4f} ({mejora*100:+.1f}% vs baseline {bs_b:.4f})."
-        ),
+        "notas": notas,
     }).execute()
-    print(f"  parametros_modelo: intl_v0.1 (is_production=true, {len(modelo.teams)} selecciones)")
+    print(f"  parametros_modelo: {version} (is_production=true, {len(modelo.teams)} selecciones)")
 
     # ── Verificacion ──
     print("\n[verificacion]")
