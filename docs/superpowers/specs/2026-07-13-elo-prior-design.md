@@ -88,6 +88,17 @@ grad    = ... + 2·l2·(α−α₀)   (antes 2·l2·α)
 - `fit(..., elo=None)` reproduce exactamente el comportamiento actual (α₀=β₀=0) —
   backward compatible, los tests existentes no cambian.
 
+> **Enmienda (plan 2026-07-13):** la l2 existente (0.001) tiene curvatura
+> despreciable frente a la verosimilitud — un grid solo sobre c no movería nada.
+> Mecanismo final: c (ancla) se estima por regresión α̂~z sobre equipos ≥30
+> partidos del v0.1; la FUERZA del prior es un parámetro nuevo l2_prior con grid
+> {0.25, 0.5, 1.0, 2.0, 4.0} (pseudo-partidos). El umbral sparse definitivo y el
+> estado del blend FIFA, tras correr el gate: UMBRAL_SPARSE=45 (con 15 el
+> segmento sparse quedaba en n=36 <40; con 45 captura n=311/1325, ~23.5% del
+> test), blend_fifa=disponible y compite (fuente encontrada: API oficial
+> `inside.fifa.com/api/ranking-overview`, snapshot 2025-09-18, 211 selecciones,
+> 100% mapeadas al espacio martj42; `fifa_ranking.csv` local, gitignored).
+
 ### 3. Serving: params y fallback
 
 - **Publicación**: `parametros_modelo` (Supabase), versión `engine_intl_v0.2`

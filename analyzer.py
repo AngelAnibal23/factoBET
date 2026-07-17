@@ -547,7 +547,7 @@ def _load_intl_predictor() -> DixonColesIntl:
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
         rows = (
             sb.table("parametros_modelo")
-            .select("mu, gamma, rho, attack_params, defense_params")
+            .select("mu, gamma, rho, attack_params, defense_params, elo_params, prior_scale")
             .eq("liga_id", LIGA_INTERNACIONAL_ID)
             .eq("is_production", True)
             .execute()
@@ -562,6 +562,8 @@ def _load_intl_predictor() -> DixonColesIntl:
         _cached_intl_model = DixonColesIntl.from_params(
             mu=float(r["mu"]), gamma=float(r["gamma"]), rho=float(r["rho"]),
             attack=r["attack_params"], defense=r["defense_params"],
+            elo_z=r.get("elo_params") or None,
+            prior_scale=float(r.get("prior_scale") or 0.0),
         )
         _intl_cache_ts = now
     return _cached_intl_model   # type: ignore[return-value]
