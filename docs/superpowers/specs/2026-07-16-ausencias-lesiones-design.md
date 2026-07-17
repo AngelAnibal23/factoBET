@@ -78,9 +78,12 @@ boleto → analyzer (_analyze_intl / bet builder route)
     `mult_ataque *= (1 − K_AUSENCIA · q)` con **`K_AUSENCIA = 0.6`** — si Messi
     produce el 30% de los goles, su ausencia resta ~18%, no 30%, porque alguien
     ocupa su lugar. Constante de diseño, visible y discutible.
-  - **Defensivo/arquero** (posición D o G vía API-Football `games.position`, sin
-    cuota ofensiva aplicable): `mult_defensa *= (1 + PENAL_DEF)` con
+  - **Defensivo/arquero**: `mult_defensa *= (1 + PENAL_DEF)` con
     **`PENAL_DEF = 0.05`** (+5% goles concedidos por titular defensivo ausente).
+    **Enmienda (plan 2026-07-17):** el repo NO persiste posiciones (verificado) —
+    la posición sale del DOM de Sofascore SI la trae; si no viene, el ausente sin
+    cuota ofensiva simplemente no ajusta (fila de la tabla de errores). Enriquecer
+    posiciones vía API-Football queda como mejora futura, no bloquea.
   - **Tope global de seguridad**: los multiplicadores acumulados se recortan a
     **[0.70, 1.30]** (±30%) — freno contra scrapes raros o equipos diezmados que
     romperían la matriz de marcadores.
