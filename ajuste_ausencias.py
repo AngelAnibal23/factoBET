@@ -67,14 +67,16 @@ def cruzar_pata(nombre_pata: str, ausentes: list[Ausente]) -> Ausente | None:
     """Mejor match por nombre entre la pata de jugador y los ausentes (>=80).
     'out' gana sobre 'doubtful' si ambos matchean.
 
-    Usa partial_token_set_ratio (no token_set_ratio) porque las patas de boleto
-    suelen venir abreviadas ("L. Messi") frente al nombre completo de Sofascore
-    ("Lionel Messi"): token_set_ratio penaliza el token corto "l." como resto no
-    compartido (76.9 < 80, test genuinely falla); partial_token_set_ratio evalúa
-    el mejor subconjunto y da 100 para ese mismo par, sin abrir falsos positivos
-    (nombres no relacionados siguen <40, ver tests)."""
+    Usa WRatio (no token_set_ratio ni partial_token_set_ratio): la pata de boleto
+    suele venir abreviada ("L. Messi") frente al nombre completo de Sofascore
+    ("Lionel Messi"). token_set_ratio penaliza el token corto "l." (76.9 < 80) y
+    partial_token_set_ratio se pasa de laxo: da 100 a cualquier par que comparta
+    un solo token, así que colisiones de apellido entre AMBOS equipos
+    ("Bernardo Silva" vs un "Thiago Silva" lesionado) matarían patas de jugadores
+    que sí juegan. WRatio da 90/85.5 a los pares legítimos y <70 a esas colisiones
+    (ver test_cruzar_pata_no_colisiona_por_apellido)."""
     hits = [a for a in ausentes
-            if fuzz.partial_token_set_ratio(nombre_pata.lower(), a.nombre.lower()) >= UMBRAL_NOMBRE]
+            if fuzz.WRatio(nombre_pata.lower(), a.nombre.lower()) >= UMBRAL_NOMBRE]
     if not hits:
         return None
     return sorted(hits, key=lambda a: a.estado != "out")[0]

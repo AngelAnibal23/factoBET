@@ -74,3 +74,15 @@ def test_cruzar_pata_exacto_fuzzy_y_none():
     assert cruzar_pata("Messi", aus).estado == "out"
     assert cruzar_pata("L. Messi", aus).motivo == "Injured - Muscle"
     assert cruzar_pata("Julian Alvarez", aus) is None
+
+
+def test_cruzar_pata_no_colisiona_por_apellido():
+    # Un apellido compartido con un ausente del OTRO equipo no debe matar la pata:
+    # partial_token_set_ratio daba 100 aquí; WRatio da <70. La pata de "Bernardo
+    # Silva" (que sí juega) no debe cruzarse con un "Thiago Silva" lesionado.
+    aus = [Ausente(nombre="Thiago Silva", estado="out", motivo="Injured"),
+           Ausente(nombre="Marcos Acuna", estado="out", motivo="Suspended")]
+    assert cruzar_pata("Bernardo Silva", aus) is None
+    assert cruzar_pata("Marcos Rojo", aus) is None
+    # y el match legítimo del mismo jugador sí cruza
+    assert cruzar_pata("T. Silva", aus).nombre == "Thiago Silva"
