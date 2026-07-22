@@ -68,3 +68,15 @@ def test_cache_corrupto_se_ignora(tmp_path, monkeypatch):
     (tmp_path / "argentina__france.json").write_text("{basura", encoding="utf-8")
     monkeypatch.setattr(subprocess, "run", _fake_run_ok)
     assert mod.obtener_ausencias("Argentina", "France") is not None
+
+
+def test_extraer_ausentes_parsea_bloques():
+    texto = "\n".join([
+        "Türkiye", "Hakan Calhanoglu", "Suspended",
+        "USA", "Cristian Roldán", "Injured - Muscle",
+        "Tim Weah", "Doubtful",
+    ])
+    r = mod._extraer_ausentes(texto, "Türkiye", "USA")
+    assert r["Türkiye"][0]["estado"] == "out"          # Suspended -> out
+    assert r["USA"][0]["motivo"] == "Injured - Muscle"
+    assert r["USA"][1]["estado"] == "doubtful"

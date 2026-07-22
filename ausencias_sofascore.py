@@ -82,3 +82,90 @@ def obtener_ausencias(home: str, away: str) -> dict | None:
     if payload.get("sin_dato"):
         return None
     return _parsear(payload)
+
+
+# ── CLI scrape (corre BAJO .venv-scrapling; el runtime nunca importa scrapling) ──
+
+_DIAS_BUSQUEDA = 4          # hoy..+3: ventana donde vive un boleto real
+_ESPERA_DOM_MS = 8000       # la app llama su API interna y renderiza (~7s en el spike)
+_UMBRAL_LINK = 80
+
+
+def _match_link(texto: str, home: str, away: str) -> bool:
+    from rapidfuzz import fuzz
+    t = (texto or "").lower()
+    return (fuzz.token_set_ratio(home.lower(), t) >= _UMBRAL_LINK and
+            fuzz.token_set_ratio(away.lower(), t) >= _UMBRAL_LINK)
+
+
+def _clasificar_estado(texto: str) -> str:
+    return "doubtful" if any(w in texto.lower() for w in ("doubt", "question")) else "out"
+
+
+def _extraer_ausentes(texto_pagina: str, home: str, away: str) -> dict:
+    """Parsea la sección de ausentes del inner_text del partido. Formato observado
+    en el spike: bloques 'Missing players' por equipo con líneas
+    'Nombre' / 'Injured - Muscle' (o 'Suspended', 'Doubtful'). Se parsea por
+    ventanas de texto entre el nombre del equipo y la siguiente sección."""
+    equipos: dict = {home: [], away: []}
+    # Implementación por regex sobre líneas: un nombre propio seguido de una línea
+    # de motivo conocida. Motivos vistos: Injured, Suspended, Doubtful, Personal.
+    import re as _re
+    lineas = [l.strip() for l in texto_pagina.splitlines() if l.strip()]
+    motivo_re = _re.compile(r"^(Injur|Suspend|Doubt|Question|Personal|Illness)", _re.I)
+    lado = None
+    for i, linea in enumerate(lineas):
+        if linea == home or linea.lower() == home.lower():
+            lado = home
+        elif linea == away or linea.lower() == away.lower():
+            lado = away
+        if lado and i + 1 < len(lineas) and motivo_re.match(lineas[i + 1]):
+            equipos[lado].append({
+                "nombre": linea, "estado": _clasificar_estado(lineas[i + 1]),
+                "motivo": lineas[i + 1], "posicion": None,
+            })
+    return equipos
+
+
+def _scrape(home: str, away: str) -> dict:
+    from datetime import date, timedelta, datetime
+    from scrapling.fetchers import StealthyFetcher
+
+    def _esperar(page):
+        page.wait_for_timeout(_ESPERA_DOM_MS)
+        return page
+
+    hoy = date.today()
+    url_partido = None
+    for d in range(_DIAS_BUSQUEDA):
+        fecha = (hoy + timedelta(days=d)).isoformat()
+        page = StealthyFetcher.fetch(
+            f"https://www.sofascore.com/football/{fecha}",
+            network_idle=False, load_dom=False, timeout=60000, page_action=_esperar,
+        )
+        for a in page.css("a[href*='/football/match/']"):
+            href = a.attrib.get("href", "")
+            if _match_link(a.text, home, away):
+                url_partido = "https://www.sofascore.com" + href
+                break
+        if url_partido:
+            break
+    if not url_partido:
+        return {"sin_dato": True, "motivo": f"partido no encontrado hoy..+{_DIAS_BUSQUEDA - 1}d"}
+
+    page = StealthyFetcher.fetch(url_partido, network_idle=False, load_dom=False,
+                                 timeout=60000, page_action=_esperar)
+    texto = page.get_all_text() if hasattr(page, "get_all_text") else page.body
+    equipos = _extraer_ausentes(texto, home, away)
+    return {"equipos": equipos, "url": url_partido,
+            "scrapeado_en": datetime.now().isoformat(timespec="seconds")}
+
+
+if __name__ == "__main__":
+    if len(sys.argv) >= 4 and sys.argv[1] == "scrape":
+        try:
+            print(json.dumps(_scrape(sys.argv[2], sys.argv[3]), ensure_ascii=False))
+        except Exception as e:   # el runtime interpreta stdout-JSON, nunca traza
+            print(json.dumps({"sin_dato": True, "motivo": f"{type(e).__name__}: {e}"}))
+    else:
+        print(json.dumps({"sin_dato": True, "motivo": "uso: scrape <home> <away>"}))
