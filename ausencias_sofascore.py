@@ -91,22 +91,46 @@ _ESPERA_DOM_MS = 8000       # la app llama su API interna y renderiza (~7s en el
 _UMBRAL_LINK = 80
 
 
-def _match_link(texto: str, home: str, away: str) -> bool:
+def _sin_acentos(s: str) -> str:
+    """El slug de Sofascore es ASCII ('turkiye'); los canonicals pueden traer
+    acentos ('Türkiye'). Normaliza ambos lados para que el fuzzy no los penalice."""
+    import unicodedata as _u
+    return "".join(c for c in _u.normalize("NFKD", s or "") if not _u.combining(c))
+
+
+def _slug_a_texto(href: str) -> str:
+    """Los nombres de los equipos viven en el slug del href
+    (…/football/match/coritiba-palmeiras/…), NO en el texto del ancla (viene vacío
+    con disable_resources). Normaliza el slug a texto buscable."""
+    import re as _re
+    m = _re.search(r"/football/match/([^/?#]+)", href or "")
+    slug = m.group(1) if m else (href or "")
+    return _sin_acentos(_re.sub(r"[-_]+", " ", slug).lower())
+
+
+def _match_link(href: str, home: str, away: str) -> bool:
+    t = _slug_a_texto(href)
     from rapidfuzz import fuzz
-    t = (texto or "").lower()
-    return (fuzz.token_set_ratio(home.lower(), t) >= _UMBRAL_LINK and
-            fuzz.token_set_ratio(away.lower(), t) >= _UMBRAL_LINK)
+    return (fuzz.token_set_ratio(_sin_acentos(home.lower()), t) >= _UMBRAL_LINK and
+            fuzz.token_set_ratio(_sin_acentos(away.lower()), t) >= _UMBRAL_LINK)
 
 
 def _clasificar_estado(texto: str) -> str:
     return "doubtful" if any(w in texto.lower() for w in ("doubt", "question")) else "out"
 
 
+# Etiquetas de sección que Sofascore intercala en el bloque de ausentes y que NO
+# son jugadores (verificado en vivo 2026-07-22: 'Coach' con motivo 'Injuries and
+# suspensions' se colaba como un ausente fantasma).
+_NO_JUGADOR = {"coach", "manager", "head coach", "missing players",
+               "injuries and suspensions", "injuries", "suspensions"}
+
+
 def _extraer_ausentes(texto_pagina: str, home: str, away: str) -> dict:
     """Parsea la sección de ausentes del inner_text del partido. Formato observado
-    en el spike: bloques 'Missing players' por equipo con líneas
-    'Nombre' / 'Injured - Muscle' (o 'Suspended', 'Doubtful'). Se parsea por
-    ventanas de texto entre el nombre del equipo y la siguiente sección."""
+    en vivo: bloques por equipo con líneas 'Nombre' / 'Injured - Muscle' (o
+    'Suspended', 'Doubtful'). Se parsea por ventanas de texto entre el nombre del
+    equipo y la siguiente sección; se descartan etiquetas de sección (_NO_JUGADOR)."""
     equipos: dict = {home: [], away: []}
     # Implementación por regex sobre líneas: un nombre propio seguido de una línea
     # de motivo conocida. Motivos vistos: Injured, Suspended, Doubtful, Personal.
@@ -119,7 +143,8 @@ def _extraer_ausentes(texto_pagina: str, home: str, away: str) -> dict:
             lado = home
         elif linea == away or linea.lower() == away.lower():
             lado = away
-        if lado and i + 1 < len(lineas) and motivo_re.match(lineas[i + 1]):
+        if (lado and linea.lower() not in _NO_JUGADOR
+                and i + 1 < len(lineas) and motivo_re.match(lineas[i + 1])):
             equipos[lado].append({
                 "nombre": linea, "estado": _clasificar_estado(lineas[i + 1]),
                 "motivo": lineas[i + 1], "posicion": None,
@@ -135,17 +160,22 @@ def _scrape(home: str, away: str) -> dict:
         page.wait_for_timeout(_ESPERA_DOM_MS)
         return page
 
+    # disable_resources dropea imágenes/media/websockets/stylesheets: sin eso, la
+    # página viva de Sofascore nunca completa "load" y goto revienta (Page crashed).
+    _COMUN = dict(network_idle=False, load_dom=False, disable_resources=True,
+                  block_webrtc=True, timeout=60000)
+
     hoy = date.today()
     url_partido = None
     for d in range(_DIAS_BUSQUEDA):
         fecha = (hoy + timedelta(days=d)).isoformat()
         page = StealthyFetcher.fetch(
             f"https://www.sofascore.com/football/{fecha}",
-            network_idle=False, load_dom=False, timeout=60000, page_action=_esperar,
+            wait_selector="a[href*='/football/match/']", page_action=_esperar, **_COMUN,
         )
         for a in page.css("a[href*='/football/match/']"):
             href = a.attrib.get("href", "")
-            if _match_link(a.text, home, away):
+            if _match_link(href, home, away):
                 url_partido = "https://www.sofascore.com" + href
                 break
         if url_partido:
@@ -153,8 +183,7 @@ def _scrape(home: str, away: str) -> dict:
     if not url_partido:
         return {"sin_dato": True, "motivo": f"partido no encontrado hoy..+{_DIAS_BUSQUEDA - 1}d"}
 
-    page = StealthyFetcher.fetch(url_partido, network_idle=False, load_dom=False,
-                                 timeout=60000, page_action=_esperar)
+    page = StealthyFetcher.fetch(url_partido, page_action=_esperar, **_COMUN)
     texto = page.get_all_text() if hasattr(page, "get_all_text") else page.body
     equipos = _extraer_ausentes(texto, home, away)
     return {"equipos": equipos, "url": url_partido,

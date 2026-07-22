@@ -80,3 +80,26 @@ def test_extraer_ausentes_parsea_bloques():
     assert r["Türkiye"][0]["estado"] == "out"          # Suspended -> out
     assert r["USA"][0]["motivo"] == "Injured - Muscle"
     assert r["USA"][1]["estado"] == "doubtful"
+
+
+def test_extraer_ausentes_descarta_encabezado_coach():
+    # Verificado en vivo (Palmeiras 2026-07-22): 'Coach' / 'Injuries and suspensions'
+    # es un encabezado de sección, no un jugador -> debe descartarse.
+    texto = "\n".join([
+        "Palmeiras", "Coach", "Injuries and suspensions",
+        "Vitor Roque", "Injured", "Paulinho", "Suspended",
+    ])
+    r = mod._extraer_ausentes(texto, "Coritiba", "Palmeiras")
+    nombres = [a["nombre"] for a in r["Palmeiras"]]
+    assert "Coach" not in nombres
+    assert nombres == ["Vitor Roque", "Paulinho"]
+
+
+def test_match_link_por_href():
+    # Los nombres viven en el slug del href, no en a.text (vacío con disable_resources).
+    href = "/football/match/coritiba-palmeiras/nOsHO#id:15237982"
+    assert mod._match_link(href, "Coritiba", "Palmeiras") is True
+    assert mod._match_link(href, "Coritiba", "Flamengo") is False   # away no está
+    # nombre compuesto en slug con guiones
+    href2 = "/football/match/united-states-turkiye/xYz"
+    assert mod._match_link(href2, "United States", "Türkiye") is True
