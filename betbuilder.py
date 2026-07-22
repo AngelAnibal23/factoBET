@@ -10,6 +10,8 @@ y emite un veredicto por techo. Agnóstico del engine: recibe (lh, la, rho).
 import numpy as np
 from scipy.stats import poisson
 
+from ajuste_ausencias import cruzar_pata
+
 MAX_GOALS = 10
 KELLY_FRACTION = 0.20
 
@@ -190,9 +192,22 @@ class BetBuilderSinCuotaError(ValueError):
     """Bet builder sin cuota_total: no se puede formar el veredicto."""
 
 
+def _ausencias_a_dict(ausencias):
+    """Serializa el bloque de ausencias para la respuesta JSON (None -> sin bloque)."""
+    if not ausencias:
+        return None
+    from dataclasses import asdict
+    return {
+        "equipos": {eq: [asdict(a) for a in lst]
+                    for eq, lst in ausencias.get("equipos", {}).items()},
+        "url": ausencias.get("url"), "scrapeado_en": ausencias.get("scrapeado_en"),
+        "lambdas": ausencias.get("lambdas"),
+    }
+
+
 def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
                         counts_model=None, neutral: bool = False, player_model=None,
-                        player_sot_model=None):
+                        player_sot_model=None, ausencias=None):
     """Ensambla el análisis de un bet builder en un ParlayAnalysis.
 
     lh/la/rho: del partido (lh None si los equipos no están en el modelo).
@@ -220,6 +235,12 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
     p_home = match_sel.local_match.canonical if match_sel else None
     p_away = match_sel.visitante_match.canonical if match_sel else None
 
+    todos_ausentes = []
+    if ausencias:
+        for lst in ausencias.get("equipos", {}).values():
+            todos_ausentes.extend(lst)
+    hay_doubtful_en_pata = False
+
     analyses = []
     goal_legs = []
     count_marginals = []
@@ -239,6 +260,11 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
             player_p = player_leg_prob(player_model, sel, lh, la, p_home, p_away)
         else:
             player_p = None
+
+        hit = (cruzar_pata(sel.player, todos_ausentes)
+               if (is_player and sel.player and todos_ausentes) else None)
+        if hit is not None and hit.estado == "out":
+            player_p = 0.0   # pata muerta: marginal 0 -> ceiling 0 -> SIN_VALOR
 
         if is_goal and covered:
             leg = (sel.mercado, sel.seleccion, sel.linea)
@@ -264,6 +290,13 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
             prob_mod = None
             exoticas_desc.append(sel.seleccion)
             nivel_cov, alertas = "NULA", ["Mercado exótico: el modelo no puede validar esta selección."]
+
+        if hit is not None and hit.estado == "out":
+            alertas = [f"{sel.player} no juega ({hit.motivo or 'ausencia confirmada'}): pata muerta."]
+            nivel_cov = "ALTA"   # certeza del dato, no del modelo
+        elif hit is not None and hit.estado == "doubtful":
+            alertas = alertas + [f"{sel.player} en duda ({hit.motivo or 'doubtful'}): el veredicto no puede afirmar valor."]
+            hay_doubtful_en_pata = True
 
         analyses.append(SelectionAnalysis(
             equipo_local=sel.local_match.canonical,
@@ -304,7 +337,12 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
         prob_estimada = None
 
     vered, kelly = verdict(ceiling, parlay.cuota_total, n_modelables, n_exoticas, techo_exacto)
+    degradado_por_duda = hay_doubtful_en_pata and vered == "VALOR"
+    if degradado_por_duda:
+        vered, kelly = "NO_CONCLUYENTE", None
     nivel_conf, razones = bb_confidence(vered, n_modelables, n_exoticas)
+    if degradado_por_duda:
+        razones = razones + ["Jugador en duda por lesión: techo válido pero la pata puede caerse."]
     p_impl = round(1.0 / parlay.cuota_total, 6)
 
     # Marcador más probable del partido (solo selecciones por ahora). La matriz ya
@@ -332,4 +370,5 @@ def analyze_bet_builder(parlay, lh, la, rho, version_modelo: str, margin: float,
         bet_builder_kelly=kelly, exoticas_desc=exoticas_desc,
         faltantes_desc=faltantes_desc,
         marcadores_partido=marcadores,
+        ausencias=_ausencias_a_dict(ausencias),
     )

@@ -132,6 +132,8 @@ class ParlayAnalysis:
     faltantes_desc:       list[str] = field(default_factory=list)
     # Marcador más probable por partido (solo selecciones por ahora; ver marcador.py)
     marcadores_partido:   list[dict] = field(default_factory=list)
+    # Ausencias/lesiones (Fase 3.4, solo Internacional) — None = liga sin esta capa
+    ausencias:            Optional[dict] = None
 
 
 # ── Dixon-Coles v0.2 (same as engine_v02.py) ─────────────────────────────────
