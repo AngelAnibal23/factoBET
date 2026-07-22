@@ -19,3 +19,5 @@ downloaded_files/
 /*.jpg
 /*.png
 boletos/
+cache_ausencias/
+.venv-scrapling/
