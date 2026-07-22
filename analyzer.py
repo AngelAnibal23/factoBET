@@ -30,6 +30,8 @@ from dotenv import load_dotenv
 
 from validator import ValidatedParlay, ValidatedSelection
 from engine_intl_v01 import DixonColesIntl
+from ausencias_sofascore import obtener_ausencias
+from ajuste_ausencias import deltas_equipo, aplicar_ajuste
 
 warnings.filterwarnings("ignore")
 load_dotenv()
@@ -335,6 +337,7 @@ def _prob_for_selection_intl(
     model: DixonColesIntl,
     sel: ValidatedSelection,
     neutral: bool,
+    mults: Optional[tuple] = None,
 ) -> tuple[Optional[float], Optional[float], Optional[float]]:
     """Espejo de _prob_for_selection para el motor internacional.
 
@@ -342,6 +345,9 @@ def _prob_for_selection_intl(
     _prob_handicap) alimentándolos con (lh, la); el 1X2 usa el rho intl. La
     única diferencia con Liga 1 es la fuente de lambdas: el predictor name-keyed
     cargado de parametros_modelo, con la ventaja de local condicional a neutral.
+
+    mults: (deltas_home, deltas_away) de la capa de ausencias (Fase 3.4), o
+    None si no hay ajuste (sin dato de ausentes para este partido).
     """
     if sel.mercado_exotico:
         return None, None, None
@@ -352,6 +358,8 @@ def _prob_for_selection_intl(
         return None, None, None
 
     lh, la = model.lambdas(home, away, neutral)
+    if mults is not None:
+        lh, la = aplicar_ajuste(lh, la, mults[0], mults[1])
 
     if sel.mercado == "1X2":
         ph, pd, pa = _prob_1x2(lh, la, model.rho)
@@ -745,6 +753,8 @@ def _analyze_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> ParlayAnaly
     casa = (parlay.casa_apuestas or "").lower().strip()
     margin = BOOKMAKER_MARGINS.get(casa, DEFAULT_MARGIN)
 
+    mults_map, bloque_ausencias = _ausencias_del_parlay(parlay)
+
     analyses: list[SelectionAnalysis] = []
     for sel in parlay.selecciones:
         home = sel.local_match.canonical
@@ -761,7 +771,19 @@ def _analyze_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> ParlayAnaly
         )
 
         prob_impl_adj = round(sel.prob_implicita / (1 + margin), 6)
-        prob_mod, lh, la = _prob_for_selection_intl(model, sel, neutral)
+
+        entry = mults_map.get((home, away)) if away else None
+        mults = (entry[0], entry[1]) if entry else None
+        prob_mod, lh, la = _prob_for_selection_intl(model, sel, neutral, mults=mults)
+
+        clave_partido = f"{home} - {away}" if away else None
+        if entry and home_in and away_in and clave_partido not in bloque_ausencias["lambdas"]:
+            lh0, la0 = model.lambdas(home, away, neutral)
+            lh2, la2 = aplicar_ajuste(lh0, la0, entry[0], entry[1])
+            bloque_ausencias["lambdas"][clave_partido] = {
+                "antes":   [round(lh0, 4), round(la0, 4)],
+                "despues": [round(lh2, 4), round(la2, 4)],
+            }
 
         if prob_mod is not None:
             edge       = round(prob_mod - prob_impl_adj, 6)
@@ -819,6 +841,7 @@ def _analyze_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> ParlayAnaly
         version_modelo      = "intl_v0.1",
         margen_aplicado     = margin,
         marcadores_partido  = marcadores,
+        ausencias           = bloque_ausencias,
     )
 
 
@@ -847,6 +870,41 @@ def _marcadores_intl(parlay: ValidatedParlay, model: DixonColesIntl) -> list[dic
     return marcadores
 
 
+def _ausencias_del_parlay(parlay: ValidatedParlay) -> tuple[dict, dict]:
+    """Consulta ausencias por partido distinto del parlay (normalmente 1).
+
+    Devuelve (mults_por_partido, bloque_respuesta). mults_por_partido mapea
+    (home, away) -> (deltas_home, deltas_away, aus_dict_crudo). Falla suave:
+    sin dato de ningun partido -> ({}, {"sin_dato": True}).
+    """
+    from dataclasses import asdict
+
+    player = _load_player_model("Internacional")
+    mults: dict = {}
+    bloque_eq: dict = {}
+    bloque_lam: dict = {}
+    urls = []
+    vistos: set[tuple[str, str]] = set()
+    for sel in parlay.selecciones:
+        home = sel.local_match.canonical
+        away = sel.visitante_match.canonical if sel.visitante_match else None
+        if not away or (home, away) in vistos:
+            continue
+        vistos.add((home, away))
+        aus = obtener_ausencias(home, away)
+        if aus is None:
+            continue
+        d_home = deltas_equipo(aus["equipos"].get(home, []), home, player)
+        d_away = deltas_equipo(aus["equipos"].get(away, []), away, player)
+        mults[(home, away)] = (d_home, d_away, aus)
+        for eq, lst in aus["equipos"].items():
+            bloque_eq[eq] = [asdict(a) for a in lst]
+        urls.append(aus.get("url"))
+    if not mults:
+        return {}, {"sin_dato": True}
+    return mults, {"equipos": bloque_eq, "urls": urls, "lambdas": bloque_lam}
+
+
 def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float) -> ParlayAnalysis:
     """Obtiene (lh,la,rho) del engine que toque y delega en betbuilder."""
     from betbuilder import analyze_bet_builder, BetBuilderSinCuotaError
@@ -856,6 +914,7 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
     match_sel = next((s for s in parlay.selecciones if s.visitante_match), None)
 
     neutral_flag = False
+    ausencias_match = None
     if liga == "internacional":
         model = _load_intl_predictor()
         rho, version = model.rho, "intl_v0.1"
@@ -870,6 +929,19 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
                 lh, la = model.lambdas(home, away, neutral_flag)
             else:
                 lh, la = None, None
+
+            if lh is not None:
+                mults_map, _ = _ausencias_del_parlay(parlay)
+                entry = mults_map.get((home, away))
+                if entry:
+                    d_home, d_away, ausencias_match = entry
+                    lh0, la0 = lh, la
+                    lh, la = aplicar_ajuste(lh, la, d_home, d_away)
+                    ausencias_match = dict(ausencias_match)
+                    ausencias_match["lambdas"] = {
+                        "antes":   [round(lh0, 4), round(la0, 4)],
+                        "despues": [round(lh, 4),  round(la, 4)],
+                    }
         else:
             lh, la = None, None
     else:
@@ -890,7 +962,8 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
 
     return analyze_bet_builder(parlay, lh, la, rho, version, margin,
                                counts_model=counts, neutral=neutral_flag,
-                               player_model=player, player_sot_model=player_sot)
+                               player_model=player, player_sot_model=player_sot,
+                               ausencias=ausencias_match)
 
 
 def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:

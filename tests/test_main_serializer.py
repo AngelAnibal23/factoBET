@@ -50,3 +50,24 @@ def test_serialize_marcadores_empty_for_liga1():
     )
     data = main._serialize_analysis(res, needs_confirmation=[])
     assert data["marcadores_partido"] == []
+
+
+def test_serialize_includes_ausencias():
+    res = ParlayAnalysis(
+        selecciones=[], prob_parlay_modelo=0.3, prob_parlay_impl=0.36,
+        cuota_total=5.0, casa_apuestas=None, nivel_confianza="ALTA",
+        razones_confianza=[], correlaciones=[], version_modelo="intl_v0.1",
+        ausencias={"sin_dato": True},
+    )
+    data = main._serialize_analysis(res, needs_confirmation=[])
+    assert data["ausencias"] == {"sin_dato": True}
+
+
+def test_serialize_ausencias_none_por_defecto():
+    res = ParlayAnalysis(
+        selecciones=[], prob_parlay_modelo=0.3, prob_parlay_impl=0.36,
+        cuota_total=5.0, casa_apuestas=None, nivel_confianza="ALTA",
+        razones_confianza=[], correlaciones=[],
+    )
+    data = main._serialize_analysis(res, needs_confirmation=[])
+    assert data["ausencias"] is None
