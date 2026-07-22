@@ -64,7 +64,8 @@ boleto → analyzer (_analyze_intl / bet builder route)
     `None` se loguea.
 - Resolución de nombres: los nombres de Sofascore se resuelven contra el roster del
   modelo por-jugador (Supabase `player_v0.2` + `player_sot_v0.1`, que ya están
-  cargados en serving): match exacto → fuzzy (rapidfuzz ratio ≥ 90). Un ausente que
+  cargados en serving): match exacto → fuzzy (rapidfuzz ≥ 80, el mismo
+  `PlayerModel.RESOLVER_UMBRAL` que ya usa el resolver de jugadores en prod). Un ausente que
   no resuelve contra el roster **se ignora para el ajuste de equipo** (no sabemos su
   peso) pero **sí participa del cruce con patas de jugador** (ahí el nombre del
   boleto es la referencia y se compara directo contra el texto de Sofascore).
@@ -149,4 +150,4 @@ validación es:
 | `PENAL_DEF` | 0.05 | +5% λ concedido por titular defensivo/arquero out |
 | `CLAMP` | [0.70, 1.30] | tope del ajuste acumulado por equipo |
 | `TTL_CACHE` | 6 h | vigencia del scrape por partido |
-| Fuzzy nombres | ratio ≥ 90 | mismo umbral que el mapeo FIFA/rosters |
+| Fuzzy nombres | ≥ 80 | `PlayerModel.RESOLVER_UMBRAL` (mismo umbral que el resolver de jugadores en prod). El cruce de patas (`cruzar_pata`) usa `WRatio ≥ 80`, no `partial_token_set_ratio`, para no colisionar por apellido compartido |
