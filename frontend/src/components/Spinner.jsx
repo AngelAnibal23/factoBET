@@ -4,8 +4,9 @@ const STAGES = [
   { at: 0,  label: 'Subiendo imagen…' },
   { at: 2,  label: 'Leyendo el ticket (OCR)…' },
   { at: 9,  label: 'Identificando equipos y mercados…' },
-  { at: 13, label: 'Corriendo modelo Dixon-Coles…' },
-  { at: 18, label: 'Cruzando probabilidades…' },
+  { at: 13, label: 'Consultando ausencias en Sofascore… (puede tardar ~2 min)' },
+  { at: 100, label: 'Corriendo modelo Dixon-Coles…' },
+  { at: 130, label: 'Cruzando probabilidades…' },
 ]
 
 export default function Spinner() {

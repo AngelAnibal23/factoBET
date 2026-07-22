@@ -1210,6 +1210,87 @@ body {
 .dot-draw  { background: var(--sub); }
 .dot-away  { background: var(--yellow); }
 
+/* ── Ausencias (Sofascore, Fase 3.4) ─────────────────────────────────────── */
+.ausencias-sin-dato {
+  font-size: 12px;
+  color: var(--sub);
+  font-style: italic;
+}
+
+.ausencias-block {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ausencias-empty {
+  font-size: 13px;
+  color: var(--sub);
+}
+
+.ausencias-team strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ausencias-team ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ausencias-team li {
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge-out,
+.badge-duda {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: var(--r-xs);
+  padding: 2px 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.badge-out {
+  color: var(--red);
+  background: var(--red-lo);
+  border: 1px solid rgba(240,68,68,.25);
+}
+
+.badge-duda {
+  color: var(--yellow);
+  background: var(--yellow-lo);
+  border: 1px solid rgba(245,166,35,.25);
+}
+
+.lambda-ajuste {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--sub);
+}
+
+.ausencias-team + .lambda-ajuste,
+.ausencias-empty + .lambda-ajuste {
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
 /* ── Motion ──────────────────────────────────────────────────── */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }

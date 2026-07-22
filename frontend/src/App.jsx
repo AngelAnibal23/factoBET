@@ -4,6 +4,7 @@ import UploadZone from './components/UploadZone.jsx'
 import Spinner from './components/Spinner.jsx'
 import Ticket from './components/Ticket.jsx'
 import MarcadorProbable from './components/MarcadorProbable.jsx'
+import AusenciasBlock from './components/AusenciasBlock.jsx'
 import BetBuilderVerdict from './components/BetBuilderVerdict.jsx'
 import SelectionCard from './components/SelectionCard.jsx'
 import CorrelationAlert from './components/CorrelationAlert.jsx'
@@ -136,6 +137,8 @@ export default function App() {
           )}
 
           <MarcadorProbable marcadores={result.marcadores_partido} />
+
+          <AusenciasBlock ausencias={result.ausencias} />
 
           <p className="section-label">Selecciones ({result.selecciones.length})</p>
           <div className="sel-grid">
