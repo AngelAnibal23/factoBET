@@ -51,3 +51,23 @@ boleto que **mezcla familias** (lo más común: "el equipo gana" + "el jugador a
 seguirá siendo `NO_CONCLUYENTE` aunque todas sus patas estén cubiertas — porque el motor
 no modela la dependencia entre familias y se mantiene conservador a propósito. El
 veredicto `VALOR` categórico solo aparece en boletos de **una sola familia**.
+
+## Capa de ausencias (lesiones/suspensiones) — solo Internacional
+
+Antes de calcular, el analyzer internacional consulta los ausentes del partido en
+**Sofascore** (scrape on-demand con caché local de 6h; 1h para "sin dato"). Fuente
+efímera, por-predicción: **no toca el fit ni Supabase**.
+
+- **Ajuste de λ (familia goles/marcador):** un titular ofensivo `out` merma el ataque de
+  su equipo en proporción a su cuota de gol del `player_v0.2` (`K=0.6`, tope acumulado
+  ±30% por la geometría del clamp); un defensa/arquero `out` sube el λ que concede.
+- **Patas de jugador:** si el jugador de la pata está `out` confirmado → su marginal es 0
+  → el boleto cae a **SIN_VALOR** con razón visible ("no juega"). Si está **en duda**
+  (`doubtful`) → no se ajusta, pero si el veredicto salía `VALOR` se **degrada a
+  NO_CONCLUYENTE** (el techo es válido, pero la pata puede caerse).
+- **Sin dato** (Sofascore no publica el partido, o el scrape falla) → se analiza **sin
+  ajuste** y se dice explícitamente en la respuesta (`ausencias: {sin_dato: true}`).
+
+El scrape corre en un venv aparte (`.venv-scrapling`, Scrapling/patchright) vía
+subprocess — el runtime nunca importa scrapling. No hay gate estadístico (no existe
+histórico de lesiones): la validación es TDD + e2e + verificación visual.
