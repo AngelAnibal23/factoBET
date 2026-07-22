@@ -33,6 +33,19 @@ def test_deltas_ofensivo_por_cuota():
     assert dfn == 1.0
 
 
+def test_deltas_resuelve_nombre_completo_vs_formato_apellido_inicial():
+    # Sofascore da "Lionel Messi"; el modelo guarda "Messi L." (token_set 76.9<80).
+    # Debe resolver igual (via WRatio) y aplicar la merma ofensiva.
+    pm = _FakePlayerModel({
+        "m": {"nombre": "Messi L.", "equipo": "Argentina", "cuota_gol": 0.30},
+        "o": {"nombre": "Otamendi N.", "equipo": "Argentina", "cuota_gol": 0.05},
+    })
+    aus = [Ausente(nombre="Lionel Messi", estado="out")]
+    atk, dfn = deltas_equipo(aus, "Argentina", pm)
+    assert atk == pytest.approx(1.0 - K_AUSENCIA * 0.30)
+    assert dfn == 1.0
+
+
 def test_deltas_doubtful_no_ajusta():
     aus = [Ausente(nombre="Lionel Messi", estado="doubtful", motivo="Knock")]
     assert deltas_equipo(aus, "Argentina", PM) == (1.0, 1.0)

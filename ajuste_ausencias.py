@@ -18,8 +18,35 @@ class Ausente:
     posicion: str | None = None
 
 
+def _sin_acentos(s: str) -> str:
+    """Normaliza acentos para que el fuzzy no penalice 'Di María' vs 'Di Maria'."""
+    import unicodedata as _u
+    return "".join(c for c in _u.normalize("NFKD", s or "") if not _u.combining(c))
+
+
 def _clamp(x: float) -> float:
     return max(CLAMP_MIN, min(CLAMP_MAX, x))
+
+
+def _resolver_en_equipo(nombre: str, equipo: str, player_model) -> str | None:
+    """Resuelve un ausente contra el roster, ACOTADO al equipo. No usa
+    `player_model.resolver` (token_set_ratio) porque Sofascore da 'Nombre Apellido'
+    y el modelo guarda 'Apellido I.': token_set falla en 'Lionel Messi'->'Messi L.'
+    (76.9<80) mientras WRatio da 85.5, y al revés WRatio falla en 'Julian Alvarez'
+    ->'Alvarez J.' (78.2) mientras token_set da 82.4 — por eso `max` de ambos. El
+    guard de equipo (fuzzy sin acento) evita cruzar homónimos de otra selección."""
+    eq_q = _sin_acentos(equipo.lower())
+    n = _sin_acentos(nombre.lower())
+    mejor_id, mejor = None, 0.0
+    for pid, j in player_model.jugadores.items():
+        eq = j.get("equipo") or ""
+        if fuzz.token_set_ratio(_sin_acentos(eq.lower()), eq_q) < UMBRAL_NOMBRE:
+            continue
+        cand = _sin_acentos(j["nombre"].lower())
+        s = max(fuzz.token_set_ratio(n, cand), fuzz.WRatio(n, cand))
+        if s > mejor:
+            mejor_id, mejor = pid, s
+    return mejor_id if mejor >= UMBRAL_NOMBRE else None
 
 
 def _cuota_ofensiva(nombre: str, equipo: str, player_model) -> float | None:
@@ -27,13 +54,8 @@ def _cuota_ofensiva(nombre: str, equipo: str, player_model) -> float | None:
     global sin guard cruzaría homónimos de otra selección)."""
     if player_model is None:
         return None
-    pid = player_model.resolver(nombre)
-    if pid is None:
-        return None
-    eq = player_model.equipo_de(pid)
-    if not eq or fuzz.token_set_ratio(eq.lower(), equipo.lower()) < UMBRAL_NOMBRE:
-        return None
-    return player_model.jugadores[pid].get("cuota_gol")
+    pid = _resolver_en_equipo(nombre, equipo, player_model)
+    return player_model.jugadores[pid].get("cuota_gol") if pid else None
 
 
 def deltas_equipo(ausentes: list[Ausente], equipo: str, player_model) -> tuple[float, float]:
