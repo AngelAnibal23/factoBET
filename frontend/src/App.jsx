@@ -33,6 +33,7 @@ export default function App() {
 
   // Modo demo (?demo): carga el analisis real sin Gemini para verificacion visual.
   // ?demo=error:CODIGO sintetiza esa variante de error localmente (sin fetch).
+  // ?demo=ausencias inyecta ausentes reales para ver el AusenciasBlock.
   useEffect(() => {
     const demo = new URLSearchParams(window.location.search).get('demo')
     if (demo === null) return
@@ -46,7 +47,8 @@ export default function App() {
       return
     }
     setState('uploading')
-    fetch('/api/v1/parlay/demo')
+    const caso = demo ? `?case=${encodeURIComponent(demo)}` : ''
+    fetch(`/api/v1/parlay/demo${caso}`)
       .then(r => r.json())
       .then(json => {
         if (!json.success) throw new ApiError(json.error?.message || 'demo error')

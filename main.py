@@ -309,10 +309,16 @@ async def analizar_parlay(
 
 
 @app.get("/api/v1/parlay/demo")
-async def parlay_demo():
+async def parlay_demo(case: str = ""):
     """Verificación visual SIN Gemini: corre el motor real sobre el bet builder de
     ejemploBET3 (Argentina vs Austria) y devuelve el mismo envelope que el análisis
-    normal. Útil cuando la cuota de OCR está agotada. No persiste ni llama al OCR."""
+    normal. Útil cuando la cuota de OCR está agotada. No persiste ni llama al OCR.
+
+    Siempre inyecta una caché de ausencias (así el demo NO dispara el scrape real de
+    ~2 min): `?case=ausencias` inyecta ausentes reales (Messi out -> pata muerta +
+    Di María en duda + Alaba out) para ver el AusenciasBlock; sin case, `sin_dato`."""
+    import os as _os
+    import ausencias_sofascore as _aus
     t0 = time.monotonic()
     ocr_data = {
         "selecciones": [
@@ -328,6 +334,22 @@ async def parlay_demo():
         "cuota_total": 1.87,
         "casa_apuestas": "Betano",
     }
+    if case == "ausencias":
+        _payload = {"equipos": {
+            "Argentina": [
+                {"nombre": "Lionel Messi", "estado": "out",
+                 "motivo": "Injured - Muscle", "posicion": None},
+                {"nombre": "Angel Di Maria", "estado": "doubtful",
+                 "motivo": "Knock", "posicion": None}],
+            "Austria": [
+                {"nombre": "David Alaba", "estado": "out",
+                 "motivo": "Suspended", "posicion": "D"}]},
+            "url": "https://www.sofascore.com/football/match/argentina-austria/demo",
+            "scrapeado_en": "2026-07-22T12:00:00"}
+    else:
+        _payload = {"sin_dato": True}
+    _cache = _aus._cache_path("Argentina", "Austria")
+    _aus._escribir_cache(_cache, _payload)
     try:
         parlay = validate(ocr_data, _get_teams())
         result = analyze(parlay)
@@ -335,6 +357,9 @@ async def parlay_demo():
         ms = int((time.monotonic() - t0) * 1000)
         return JSONResponse(status_code=500,
                             content=_err("DEMO_ERROR", "No se pudo armar el demo.", str(e), ms))
+    finally:
+        if _os.path.exists(_cache):
+            _os.remove(_cache)
     ms = int((time.monotonic() - t0) * 1000)
     data = _serialize_analysis(result, parlay.needs_confirmation, narrativa=None)
     data["image_hash"] = "demo"
