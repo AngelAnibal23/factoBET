@@ -67,16 +67,22 @@ def obtener_ausencias(home: str, away: str) -> dict | None:
     payload = _leer_cache(path)
     if payload is None:
         try:
+            # PYTHONIOENCODING/PYTHONUTF8: en Windows el hijo emitiría el JSON con
+            # acentos en cp1252 (byte 0xed) y el padre lo decodifica utf-8 -> crash;
+            # forzamos utf-8 en ambos lados. errors="replace" es red de seguridad.
+            env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
             r = subprocess.run(
                 [_PY_SCRAPLING, os.path.abspath(__file__), "scrape", home, away],
-                capture_output=True, text=True, encoding="utf-8",
-                timeout=SCRAPE_TIMEOUT,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=SCRAPE_TIMEOUT, env=env,
             )
-            if r.returncode == 0 and r.stdout.strip():
-                payload = json.loads(r.stdout)
+            salida = (r.stdout or "").strip().splitlines()
+            if r.returncode == 0 and salida:
+                payload = json.loads(salida[-1])   # última línea = JSON; los logs van antes
             else:
                 payload = {"sin_dato": True, "motivo": f"scrape rc={r.returncode}"}
-        except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError) as e:
+        except (subprocess.TimeoutExpired, OSError, ValueError) as e:
+            # ValueError cubre json.JSONDecodeError y UnicodeDecodeError -> fail-soft.
             payload = {"sin_dato": True, "motivo": type(e).__name__}
         _escribir_cache(path, payload)
     if payload.get("sin_dato"):
