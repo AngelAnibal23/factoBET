@@ -521,17 +521,19 @@ Reemplazar el bloque de caché y `_load_and_fit` (analyzer.py:497-532) por:
 
 _cached_clubes:   dict[str, tuple] = {}       # slug -> (model, matches, counts)
 _cache_ts_clubes: dict[str, datetime] = {}    # slug -> timestamp del fit
-_cached_liga_ids: dict[str, str | None] = {}  # nombre de liga -> uuid
+_cached_liga_ids: dict[str, str] = {}         # nombre de liga -> uuid (solo aciertos)
 
 
 def _liga_id_por_nombre(nombre: str) -> str | None:
-    """UUID de una liga por su nombre en `ligas`. Cache de proceso (no expira:
-    el id de una liga no cambia)."""
-    if nombre not in _cached_liga_ids:
+    """UUID de una liga por su nombre en `ligas`. Cachea SOLO el acierto (el id de
+    una liga no cambia). El fallo no se cachea: una liga ingestada despues (p.ej.
+    la Premier antes de su ingesta) se resuelve sola sin reiniciar el proceso."""
+    if _cached_liga_ids.get(nombre) is None:
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
         rows = sb.table("ligas").select("id").eq("nombre", nombre).execute().data
-        _cached_liga_ids[nombre] = rows[0]["id"] if rows else None
-    return _cached_liga_ids[nombre]
+        if rows:
+            _cached_liga_ids[nombre] = rows[0]["id"]
+    return _cached_liga_ids.get(nombre)
 
 
 def _load_and_fit(liga: str = "liga1") -> tuple[DixonColesModel, list[dict], dict[str, int]]:
