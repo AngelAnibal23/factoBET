@@ -647,19 +647,20 @@ _cached_counts_model: dict = {}
 
 def _load_counts_model(liga_nombre: str):
     """Carga el CountsModel de una liga desde parametros_modelo (counts_v0.1).
-    liga_nombre: 'Internacional' | 'Liga 1 Peruana'. None si no hay params."""
+    liga_nombre: nombre de liga tal como aparece en `ligas` (un valor de
+    SLUG_A_NOMBRE). None si no hay params."""
     import json
     from counts_model import CountsModel
     if liga_nombre in _cached_counts_model:
         return _cached_counts_model[liga_nombre]
-    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-    liga = sb.table("ligas").select("id").eq("nombre", liga_nombre).execute().data
-    if not liga:
+    liga_id = _liga_id_por_nombre(liga_nombre)
+    if liga_id is None:
         _cached_counts_model[liga_nombre] = None
         return None
+    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
     rows = (sb.table("parametros_modelo")
             .select("attack_params,defense_params,notas")
-            .eq("liga_id", liga[0]["id"]).eq("version_modelo", "counts_v0.1")
+            .eq("liga_id", liga_id).eq("version_modelo", "counts_v0.1")
             .eq("is_production", True).execute().data)
     if not rows:
         _cached_counts_model[liga_nombre] = None
@@ -689,14 +690,14 @@ def _load_player_model(liga_nombre: str):
     from player_model import PlayerModel
     if liga_nombre in _cached_player_model:
         return _cached_player_model[liga_nombre]
-    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-    liga = sb.table("ligas").select("id").eq("nombre", liga_nombre).execute().data
-    if not liga:
+    liga_id = _liga_id_por_nombre(liga_nombre)
+    if liga_id is None:
         _cached_player_model[liga_nombre] = None
         return None
+    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
     rows = (sb.table("parametros_modelo")
             .select("notas")
-            .eq("liga_id", liga[0]["id"]).eq("version_modelo", PLAYER_MODEL_VERSION)
+            .eq("liga_id", liga_id).eq("version_modelo", PLAYER_MODEL_VERSION)
             .eq("is_production", True).execute().data)
     if not rows:
         _cached_player_model[liga_nombre] = None
@@ -716,14 +717,14 @@ def _load_player_sot_model(liga_nombre: str):
     from player_model import PlayerModel
     if liga_nombre in _cached_player_sot_model:
         return _cached_player_sot_model[liga_nombre]
-    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-    liga = sb.table("ligas").select("id").eq("nombre", liga_nombre).execute().data
-    if not liga:
+    liga_id = _liga_id_por_nombre(liga_nombre)
+    if liga_id is None:
         _cached_player_sot_model[liga_nombre] = None
         return None
+    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
     rows = (sb.table("parametros_modelo")
             .select("notas")
-            .eq("liga_id", liga[0]["id"]).eq("version_modelo", "player_sot_v0.1")
+            .eq("liga_id", liga_id).eq("version_modelo", "player_sot_v0.1")
             .eq("is_production", True).execute().data)
     if not rows:
         _cached_player_sot_model[liga_nombre] = None
@@ -1029,10 +1030,11 @@ def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
     """
     Full statistical analysis of a validated parlay.
 
-    Routes to Liga 1 (refit Dixon-Coles) or Internacional (frozen params) based
-    on the leagues of the matched teams. A mixed parlay (Liga 1 + Internacional)
-    is rejected — it has no statistical meaning and usually signals a fuzzy
-    cross-match.
+    Routes to the league of the matched teams (`_liga_de_parlay` over the
+    registry `SLUG_A_NOMBRE`): a club league gets a refit Dixon-Coles, while
+    Internacional uses frozen params. A parlay whose selections span more than
+    one league is rejected — it has no statistical meaning and usually signals
+    a fuzzy cross-match.
     """
     team_liga_map = _load_team_liga_map()
     liga = _liga_de_parlay(parlay, team_liga_map)
