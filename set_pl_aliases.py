@@ -36,10 +36,10 @@ ALIAS_PL = {
     "Fulham": ["Fulham FC"],
     "Ipswich": ["Ipswich Town"],
     "Leeds": ["Leeds United", "Leeds Utd"],
-    "Leicester": ["Leicester City"],
+    "Leicester": ["Leicester City"],  # ojo: NO "City" solo — colisiona con Manchester City
     "Liverpool": ["Liverpool FC"],
     "Luton": ["Luton Town"],
-    "Manchester City": ["Man City", "Manchester City FC", "City"],
+    "Manchester City": ["Man City", "Manchester City FC"],
     "Manchester United": ["Man United", "Man Utd", "Manchester Utd", "Manchester United FC"],
     "Newcastle": ["Newcastle United", "Newcastle Utd"],
     "Nottingham Forest": ["Nottingham", "Nott'm Forest", "Forest"],
