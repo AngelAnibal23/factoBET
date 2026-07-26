@@ -91,3 +91,48 @@ def test_equipo_de_liga_no_registrada_queda_fuera_del_mapa(monkeypatch):
     mapa = analyzer._load_team_liga_map()
 
     assert "E-ZZZ" not in mapa
+
+
+# ── Liga del parlay ───────────────────────────────────────────────────────────
+
+def _tm(nombre, eid):
+    return TeamMatch(raw=nombre, canonical=nombre, equipo_id=eid,
+                     score=1.0, status="MATCHED")
+
+
+def _sel(local, lid, vis, vid, cuota=2.0):
+    return ValidatedSelection(
+        equipo_local_raw=local, equipo_visitante_raw=vis,
+        mercado="1X2", seleccion="home", cuota=cuota, linea=None,
+        local_match=_tm(local, lid), visitante_match=_tm(vis, vid),
+        prob_implicita=round(1 / cuota, 6), mercado_exotico=False,
+    )
+
+
+def _parlay(*sels, cuota_total=2.10, es_bet_builder=False):
+    return ValidatedParlay(selecciones=list(sels), cuota_total=cuota_total,
+                           casa_apuestas="betano", es_bet_builder=es_bet_builder)
+
+
+def test_ruteo_premier():
+    p = _parlay(_sel("Arsenal", "E-ARS", "Chelsea", "E-CHE"))
+    m = {"E-ARS": "premier", "E-CHE": "premier"}
+    assert analyzer._liga_de_parlay(p, m) == "premier"
+
+
+def test_ruteo_premier_mas_liga1_es_mixto():
+    p = _parlay(_sel("Arsenal", "E-ARS", "Alianza Lima", "E-ALI"))
+    m = {"E-ARS": "premier", "E-ALI": "liga1"}
+    assert analyzer._liga_de_parlay(p, m) == "mixto"
+
+
+def test_ruteo_premier_mas_internacional_es_mixto():
+    p = _parlay(_sel("Arsenal", "E-ARS", "France", "E-FRA"))
+    m = {"E-ARS": "premier", "E-FRA": "internacional"}
+    assert analyzer._liga_de_parlay(p, m) == "mixto"
+
+
+def test_ruteo_sin_equipos_reconocidos_cae_a_liga1():
+    """Comportamiento histórico del fallback: sin match, ruta de clubes por defecto."""
+    p = _parlay(_sel("Equipo X", "E-???", "Equipo Y", "E-!!!"))
+    assert analyzer._liga_de_parlay(p, {}) == "liga1"

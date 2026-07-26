@@ -741,8 +741,12 @@ def _load_team_liga_map() -> dict[str, str]:
 
 
 def _liga_de_parlay(parlay: ValidatedParlay, team_liga_map: dict[str, str]) -> str:
-    """Devuelve "liga1" | "internacional" | "mixto" según las ligas de los
-    equipos matcheados. Mixto (Liga 1 + Internacional) se rechaza aguas arriba."""
+    """Slug de la liga del parlay: "liga1" | "premier" | "internacional" | "mixto".
+
+    Un boleto es de UNA sola liga: CUALQUIER cruce (Liga1+intl, Premier+Liga1,
+    Premier+intl) es "mixto" y se rechaza aguas arriba. Sin equipos reconocidos ->
+    "liga1" (fallback histórico).
+    """
     ligas: set[str] = set()
     for sel in parlay.selecciones:
         ids = [sel.local_match.equipo_id]
@@ -752,11 +756,11 @@ def _liga_de_parlay(parlay: ValidatedParlay, team_liga_map: dict[str, str]) -> s
             if tid and tid in team_liga_map:
                 ligas.add(team_liga_map[tid])
 
-    if "internacional" in ligas and "liga1" in ligas:
+    if len(ligas) > 1:
         return "mixto"
-    if ligas == {"internacional"}:
-        return "internacional"
-    return "liga1"   # solo liga1, o sin equipos reconocidos -> comportamiento original
+    if not ligas:
+        return "liga1"   # sin equipos reconocidos -> comportamiento original
+    return ligas.pop()
 
 
 def warm_up() -> None:
@@ -1004,8 +1008,9 @@ def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
     liga = _liga_de_parlay(parlay, team_liga_map)
     if liga == "mixto":
         raise ValueError(
-            "Parlay mixto: combina equipos de Liga 1 Peruana y selecciones "
-            "internacionales. No es analizable como un solo parlay; sube boletos separados."
+            "Parlay mixto: combina equipos de mas de una liga (Liga 1 Peruana, "
+            "Premier League o selecciones internacionales). No es analizable como "
+            "un solo parlay; sube boletos separados."
         )
 
     casa = (parlay.casa_apuestas or "").lower().strip()
