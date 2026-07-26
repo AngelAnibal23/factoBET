@@ -45,6 +45,22 @@ LIGA_INTERNACIONAL_ID = "cc1ffe11-7ba1-4a86-9d35-e6eedbe2ec38"
 # Anfitriones 2026: de local reciben ventaja (gamma); el resto juega neutral.
 HOSTS_2026 = {"United States", "Mexico", "Canada"}
 
+# ── Registro de ligas (ruteo N-ligas) ─────────────────────────────────────────
+# slug de ruteo -> nombre EXACTO de la liga en la tabla `ligas`. Añadir una liga
+# es añadir una línea aquí + sus datos en `equipos`/`partidos`.
+SLUG_A_NOMBRE = {
+    "liga1":         "Liga 1 Peruana",
+    "premier":       "Premier League",
+    "internacional": "Internacional",
+}
+NOMBRE_A_SLUG = {nombre: slug for slug, nombre in SLUG_A_NOMBRE.items()}
+
+# Ligas de clubes: el DC se reajusta en runtime desde `partidos` (una por liga).
+SLUGS_CLUBES = ("liga1", "premier")
+
+# Temporadas de clubes disponibles en `partidos` (API-Football plan Free).
+TEMPORADAS_CLUBES = ["2022", "2023", "2024"]
+
 # Typical overround by bookmaker (used for margin removal)
 BOOKMAKER_MARGINS = {
     "betano":   0.06,
@@ -697,7 +713,12 @@ def _load_player_sot_model(liga_nombre: str):
 
 
 def _load_team_liga_map() -> dict[str, str]:
-    """Mapa equipo_id -> "liga1" | "internacional" para rutear cada parlay."""
+    """Mapa equipo_id -> slug de liga ("liga1" | "premier" | "internacional").
+
+    N ligas: el slug sale del NOMBRE de la liga en `ligas` (registro SLUG_A_NOMBRE).
+    Un equipo de una liga que no modelamos queda FUERA del mapa; el ruteo binario
+    viejo lo habría mandado a Liga 1 por descarte.
+    """
     global _cached_team_liga, _team_liga_ts
     now = datetime.now(tz=timezone.utc)
     expired = (
@@ -706,11 +727,15 @@ def _load_team_liga_map() -> dict[str, str]:
     )
     if expired:
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        ligas = {l["id"]: l["nombre"]
+                 for l in sb.table("ligas").select("id, nombre").execute().data}
         rows = sb.table("equipos").select("id, liga_id").execute().data
-        _cached_team_liga = {
-            r["id"]: ("internacional" if r["liga_id"] == LIGA_INTERNACIONAL_ID else "liga1")
-            for r in rows
-        }
+        mapa = {}
+        for r in rows:
+            slug = NOMBRE_A_SLUG.get(ligas.get(r["liga_id"], ""))
+            if slug:
+                mapa[r["id"]] = slug
+        _cached_team_liga = mapa
         _team_liga_ts = now
     return _cached_team_liga   # type: ignore[return-value]
 
