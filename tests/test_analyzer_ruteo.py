@@ -136,3 +136,25 @@ def test_ruteo_sin_equipos_reconocidos_cae_a_liga1():
     """Comportamiento histórico del fallback: sin match, ruta de clubes por defecto."""
     p = _parlay(_sel("Equipo X", "E-???", "Equipo Y", "E-!!!"))
     assert analyzer._liga_de_parlay(p, {}) == "liga1"
+
+
+def test_ruteo_con_equipo_no_reconocido_usa_los_que_si():
+    """El ruteo se decide con los equipos que SÍ resolvieron: los no reconocidos
+    no arrastran el parlay a otra liga."""
+    p = _parlay(_sel("Arsenal", "E-ARS", "Unknown FC", "E-???"))
+    m = {"E-ARS": "premier"}
+    assert analyzer._liga_de_parlay(p, m) == "premier"
+
+
+def test_ruteo_seleccion_sin_visitante():
+    """Mercado de un solo equipo (visitante_match=None): no debe reventar y debe
+    rutear por el local."""
+    sel = ValidatedSelection(
+        equipo_local_raw="Arsenal", equipo_visitante_raw=None,
+        mercado="1X2", seleccion="home", cuota=2.0, linea=None,
+        local_match=_tm("Arsenal", "E-ARS"), visitante_match=None,
+        prob_implicita=0.5, mercado_exotico=False,
+    )
+    p = _parlay(sel)
+    m = {"E-ARS": "premier"}
+    assert analyzer._liga_de_parlay(p, m) == "premier"
