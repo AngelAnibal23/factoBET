@@ -1,0 +1,126 @@
+"""Parseo de argumentos de los scripts de descarga/carga. Los scripts hacen red y
+Supabase en main(); aquí solo se prueban las funciones puras de configuración."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+import pytest
+
+
+# ── download_fixtures.py ──────────────────────────────────────────────────────
+
+def test_config_fixtures_default_es_liga1():
+    from download_fixtures import parsear_args
+    cfg = parsear_args([])
+    assert cfg.liga_api_id == 281
+    assert cfg.temporadas == [2022, 2023, 2024]
+    assert cfg.nombre == "Liga 1 Peruana"
+    assert cfg.pais == "Peru"
+
+
+def test_config_fixtures_premier():
+    from download_fixtures import parsear_args
+    cfg = parsear_args(["--liga", "39", "--nombre", "Premier League",
+                        "--pais", "England"])
+    assert cfg.liga_api_id == 39
+    assert cfg.nombre == "Premier League"
+    assert cfg.pais == "England"
+    assert cfg.temporadas == [2022, 2023, 2024]
+
+
+def test_config_fixtures_temporadas_explicitas():
+    from download_fixtures import parsear_args
+    cfg = parsear_args(["--temporadas", "2023,2024"])
+    assert cfg.temporadas == [2023, 2024]
+
+
+def test_filas_equipos_deduplica_por_api_id():
+    from download_fixtures import filas_equipos
+    fixtures = [
+        {"teams": {"home": {"id": 1, "name": "Alianza Lima"},
+                    "away": {"id": 2, "name": "Universitario"}}},
+        {"teams": {"home": {"id": 1, "name": "Alianza Lima"},
+                    "away": {"id": 3, "name": "Sporting Cristal"}}},
+    ]
+    rows = filas_equipos(fixtures, liga_id="liga-uuid", pais="Peru")
+    ids = [r["api_football_id"] for r in rows]
+    assert sorted(ids) == [1, 2, 3]
+    assert len(rows) == 3
+    for r in rows:
+        assert r["liga_id"] == "liga-uuid"
+        assert r["pais"] == "Peru"
+    by_id = {r["api_football_id"]: r for r in rows}
+    assert by_id[1]["nombre_oficial"] == "Alianza Lima"
+    assert by_id[2]["nombre_oficial"] == "Universitario"
+    assert by_id[3]["nombre_oficial"] == "Sporting Cristal"
+
+
+def _fixture(fid=100, home_id=1, away_id=2, status="FT", gh=2, ga=1,
+             season=2023, round_="Regular Season - 10"):
+    return {
+        "fixture": {"id": fid, "date": "2023-05-01T20:00:00+00:00",
+                    "status": {"short": status},
+                    "venue": {"name": "Estadio X"}, "referee": "Juan Perez"},
+        "teams": {"home": {"id": home_id, "name": "Home FC"},
+                  "away": {"id": away_id, "name": "Away FC"}},
+        "goals": {"home": gh, "away": ga},
+        "score": {"halftime": {"home": 1, "away": 0}},
+        "league": {"season": season, "round": round_},
+    }
+
+
+def test_filas_partidos_salta_equipos_no_resueltos():
+    from download_fixtures import filas_partidos
+    fixtures = [_fixture(home_id=1, away_id=999)]  # 999 no está en el mapa
+    equipo_map = {1: "uuid-home"}
+    filas, saltados = filas_partidos(fixtures, liga_id="liga-uuid", equipo_map=equipo_map)
+    assert filas == []
+    assert saltados == 1
+
+
+def test_filas_partidos_mapea_estado_y_resultado():
+    from download_fixtures import filas_partidos
+    equipo_map = {1: "uuid-home", 2: "uuid-away"}
+
+    ft_fixture = _fixture(fid=1, status="FT", gh=2, ga=1)
+    ns_fixture = _fixture(fid=2, status="NS", gh=None, ga=None)
+
+    filas, saltados = filas_partidos([ft_fixture, ns_fixture],
+                                      liga_id="liga-uuid", equipo_map=equipo_map)
+    assert saltados == 0
+    assert len(filas) == 2
+
+    by_id = {f["api_football_id"]: f for f in filas}
+    assert by_id[1]["estado"] == "FINISHED"
+    assert by_id[1]["resultado"] == "HOME"
+    assert by_id[1]["datos_completos"] is True
+
+    assert by_id[2]["estado"] == "SCHEDULED"
+    assert by_id[2]["resultado"] is None
+    assert by_id[2]["datos_completos"] is False
+
+
+def test_api_get_detecta_cuota_agotada(monkeypatch):
+    import download_fixtures
+
+    class FakeResp:
+        headers = {}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"errors": {"plan": "Free plans do not have access to this "
+                                        "season, try from 2022 to 2024."},
+                     "response": []}
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        return FakeResp()
+
+    monkeypatch.setattr(download_fixtures.requests, "get", fake_get)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        download_fixtures.api_get("fixtures", {"league": 39, "season": 2025},
+                                   api_key="fake-key")
+    assert "plan" in str(exc_info.value)
