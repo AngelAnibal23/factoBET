@@ -785,8 +785,16 @@ def _liga_de_parlay(parlay: ValidatedParlay, team_liga_map: dict[str, str]) -> s
 
 
 def warm_up() -> None:
-    """Pre-load and fit the models. Call at server startup."""
-    _load_and_fit()             # Liga 1: ajusta Dixon-Coles
+    """Pre-load and fit the models. Call at server startup.
+
+    Una liga de clubes sin datos aún (p.ej. la Premier antes de la ingesta) no
+    debe tumbar el arranque: se avisa y se sigue.
+    """
+    for slug in SLUGS_CLUBES:
+        try:
+            _load_and_fit(slug)
+        except RuntimeError as exc:
+            print(f"[warm_up] {slug}: {exc}")
     _load_team_liga_map()       # ruteo
     _load_intl_predictor()      # Internacional: params congelados
 
@@ -995,11 +1003,12 @@ def _analyze_bet_builder_route(parlay: ValidatedParlay, liga: str, margin: float
         else:
             lh, la = None, None
     else:
-        model, _, _ = _load_and_fit()
+        nombre = SLUG_A_NOMBRE[liga]
+        model, _, _ = _load_and_fit(liga)
         rho, version = model.rho, "v0.2"
-        counts = _load_counts_model("Liga 1 Peruana")
-        player = _load_player_model("Liga 1 Peruana")
-        player_sot = _load_player_sot_model("Liga 1 Peruana")
+        counts = _load_counts_model(nombre)
+        player = _load_player_model(nombre)
+        player_sot = _load_player_sot_model(nombre)
         if match_sel:
             hid = match_sel.local_match.equipo_id
             aid = match_sel.visitante_match.equipo_id
@@ -1043,7 +1052,7 @@ def analyze(parlay: ValidatedParlay) -> ParlayAnalysis:
     if liga == "internacional":
         return _analyze_intl(parlay, _load_intl_predictor())
 
-    model, _, team_match_count = _load_and_fit()
+    model, _, team_match_count = _load_and_fit(liga)
 
     # Analyze each selection
     analyses: list[SelectionAnalysis] = []

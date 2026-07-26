@@ -275,3 +275,69 @@ def test_liga_ingestada_despues_se_resuelve_sin_reiniciar(monkeypatch):
     _, matches, _ = analyzer._load_and_fit("premier")
 
     assert [m["equipo_local_id"] for m in matches] == ["E-ARS"]
+
+
+# ── La ruta de clubes usa el modelo y los params de SU liga ───────────────────
+
+def test_analyze_usa_el_dc_de_la_liga_del_parlay(monkeypatch):
+    pedidas = []
+
+    def _fake_load_and_fit(liga="liga1"):
+        pedidas.append(liga)
+        return _FakeDC().fit([], None), [], {}
+
+    monkeypatch.setattr(analyzer, "_load_and_fit", _fake_load_and_fit)
+    monkeypatch.setattr(analyzer, "_load_team_liga_map",
+                        lambda: {"E-ARS": "premier", "E-CHE": "premier"})
+    p = _parlay(_sel("Arsenal", "E-ARS", "Chelsea", "E-CHE"))
+
+    analyzer.analyze(p)
+
+    assert pedidas == ["premier"]
+
+
+def test_betbuilder_premier_pide_params_de_premier(monkeypatch):
+    pedidas = {"fit": [], "counts": [], "player": [], "sot": []}
+
+    def _fake_load_and_fit(liga="liga1"):
+        pedidas["fit"].append(liga)
+        return _FakeDC().fit([], None), [], {}
+
+    monkeypatch.setattr(analyzer, "_load_and_fit", _fake_load_and_fit)
+    monkeypatch.setattr(analyzer, "_load_counts_model",
+                        lambda n: pedidas["counts"].append(n))
+    monkeypatch.setattr(analyzer, "_load_player_model",
+                        lambda n: pedidas["player"].append(n))
+    monkeypatch.setattr(analyzer, "_load_player_sot_model",
+                        lambda n: pedidas["sot"].append(n))
+
+    p = _parlay(_sel("Arsenal", "E-ARS", "Chelsea", "E-CHE"),
+                cuota_total=2.0, es_bet_builder=True)
+
+    analyzer._analyze_bet_builder_route(p, "premier", 0.06)
+
+    assert pedidas["fit"] == ["premier"]
+    assert pedidas["counts"] == ["Premier League"]
+    assert pedidas["player"] == ["Premier League"]
+    assert pedidas["sot"] == ["Premier League"]
+
+
+def test_warm_up_tolera_liga_sin_datos(monkeypatch, capsys):
+    """La Premier no existe en `ligas` hasta su ingesta: warm_up debe avisar y
+    seguir, no tumbar el arranque del servidor."""
+    llamadas = []
+
+    def _fake_load_and_fit(liga="liga1"):
+        llamadas.append(liga)
+        if liga == "premier":
+            raise RuntimeError("La liga 'Premier League' no existe en `ligas`")
+        return _FakeDC().fit([], None), [], {}
+
+    monkeypatch.setattr(analyzer, "_load_and_fit", _fake_load_and_fit)
+    monkeypatch.setattr(analyzer, "_load_team_liga_map", lambda: {})
+    monkeypatch.setattr(analyzer, "_load_intl_predictor", lambda: None)
+
+    analyzer.warm_up()
+
+    assert llamadas == ["liga1", "premier"]
+    assert "premier" in capsys.readouterr().out
