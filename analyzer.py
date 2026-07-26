@@ -510,27 +510,48 @@ def _confidence(analyses: list[SelectionAnalysis], correlaciones: list[Correlaci
     return nivel, razones
 
 
-# ── Model + data cache (refit every MODEL_TTL_HOURS) ─────────────────────────
+# ── Model + data cache por liga de clubes (refit cada MODEL_TTL_HOURS) ────────
 
-_cached_model:   DixonColesModel | None = None
-_cached_matches: list[dict] | None      = None
-_cached_counts:  dict[str, int] | None  = None
-_cache_ts:       datetime | None        = None
+_cached_clubes:   dict[str, tuple] = {}       # slug -> (model, matches, counts)
+_cache_ts_clubes: dict[str, datetime] = {}    # slug -> timestamp del fit
+_cached_liga_ids: dict[str, str | None] = {}  # nombre de liga -> uuid
 
 
-def _load_and_fit() -> tuple[DixonColesModel, list[dict], dict[str, int]]:
-    global _cached_model, _cached_matches, _cached_counts, _cache_ts
+def _liga_id_por_nombre(nombre: str) -> str | None:
+    """UUID de una liga por su nombre en `ligas`. Cache de proceso (no expira:
+    el id de una liga no cambia)."""
+    if nombre not in _cached_liga_ids:
+        sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        rows = sb.table("ligas").select("id").eq("nombre", nombre).execute().data
+        _cached_liga_ids[nombre] = rows[0]["id"] if rows else None
+    return _cached_liga_ids[nombre]
+
+
+def _load_and_fit(liga: str = "liga1") -> tuple[DixonColesModel, list[dict], dict[str, int]]:
+    """Ajusta (y cachea 6h) el Dixon-Coles de UNA liga de clubes.
+
+    El filtro por `liga_id` no es cosmético: `partidos` guarda TAMBIÉN los ~8.1k
+    partidos internacionales, así que sin filtro el fit de Liga 1 salía de un pool
+    con 3.255 partidos de selecciones contra 996 propios (mu/gamma/rho dominados
+    por selecciones).
+    """
     now = datetime.now(tz=timezone.utc)
-    expired = (
-        _cache_ts is None or
-        (now - _cache_ts).total_seconds() > MODEL_TTL_HOURS * 3600
-    )
+    ts = _cache_ts_clubes.get(liga)
+    expired = ts is None or (now - ts).total_seconds() > MODEL_TTL_HOURS * 3600
     if expired:
+        nombre = SLUG_A_NOMBRE[liga]
+        liga_id = _liga_id_por_nombre(nombre)
+        if liga_id is None:
+            raise RuntimeError(
+                f"La liga '{nombre}' no existe en `ligas`: no hay partidos que ajustar. "
+                "Corre la ingesta de esa liga antes de analizar sus boletos."
+            )
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
         rows = (
             sb.table("partidos")
             .select("equipo_local_id, equipo_visitante_id, goles_local, goles_visitante, resultado, temporada, fecha")
-            .in_("temporada", ["2022", "2023", "2024"])
+            .eq("liga_id", liga_id)
+            .in_("temporada", TEMPORADAS_CLUBES)
             .eq("estado", "FINISHED")
             .execute()
             .data
@@ -541,11 +562,9 @@ def _load_and_fit() -> tuple[DixonColesModel, list[dict], dict[str, int]]:
             for tid in (m["equipo_local_id"], m["equipo_visitante_id"]):
                 counts[tid] = counts.get(tid, 0) + 1
         model = DixonColesModel().fit(matches, now)
-        _cached_model   = model
-        _cached_matches = matches
-        _cached_counts  = counts
-        _cache_ts       = now
-    return _cached_model, _cached_matches, _cached_counts   # type: ignore[return-value]
+        _cached_clubes[liga]   = (model, matches, counts)
+        _cache_ts_clubes[liga] = now
+    return _cached_clubes[liga]
 
 
 # ── Internacional: predictor congelado + mapa de ruteo (cache 6h) ─────────────

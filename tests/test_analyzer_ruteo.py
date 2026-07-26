@@ -158,3 +158,93 @@ def test_ruteo_seleccion_sin_visitante():
     p = _parlay(sel)
     m = {"E-ARS": "premier"}
     assert analyzer._liga_de_parlay(p, m) == "premier"
+
+
+# ── Un DC por liga de clubes ──────────────────────────────────────────────────
+
+PARTIDOS = [
+    # Liga 1 (liga_id L-PE)
+    {"liga_id": "L-PE", "equipo_local_id": "E-ALI", "equipo_visitante_id": "E-UNI",
+     "goles_local": 1, "goles_visitante": 0, "resultado": "HOME",
+     "temporada": "2023", "fecha": "2023-05-01T00:00:00+00:00", "estado": "FINISHED"},
+    # Premier (liga_id L-EN)
+    {"liga_id": "L-EN", "equipo_local_id": "E-ARS", "equipo_visitante_id": "E-CHE",
+     "goles_local": 2, "goles_visitante": 1, "resultado": "HOME",
+     "temporada": "2023", "fecha": "2023-05-02T00:00:00+00:00", "estado": "FINISHED"},
+    # Internacional: vive en la MISMA tabla y no debe entrar a ningún fit de clubes
+    {"liga_id": analyzer.LIGA_INTERNACIONAL_ID, "equipo_local_id": "E-FRA",
+     "equipo_visitante_id": "E-BRA", "goles_local": 1, "goles_visitante": 1,
+     "resultado": "DRAW", "temporada": "2023", "fecha": "2023-05-03T00:00:00+00:00",
+     "estado": "FINISHED"},
+]
+
+
+class _FakeDC:
+    """Sustituye a DixonColesModel: registra con qué partidos se ajustó.
+
+    `lambdas`/`predict_1x2` son necesarias porque `_prob_for_selection` las llama
+    sin comprobar `idx` (analyzer.py:298)."""
+    def __init__(self):
+        self.matches = None
+        self.rho = -0.05
+        self.idx = {}
+
+    def fit(self, matches, _ref_date):
+        self.matches = list(matches)
+        self.idx = {m["equipo_local_id"]: 0 for m in matches}
+        return self
+
+    def lambdas(self, _home_id, _away_id):
+        return 1.3, 1.1
+
+    def predict_1x2(self, _lh, _la):
+        return 0.45, 0.28, 0.27
+
+
+def _preparar_fit(monkeypatch):
+    registro = _fake_sb(monkeypatch, {"ligas": LIGAS, "equipos": EQUIPOS,
+                                      "partidos": PARTIDOS})
+    monkeypatch.setattr(analyzer, "DixonColesModel", _FakeDC)
+    monkeypatch.setattr(analyzer, "_cached_clubes", {})
+    monkeypatch.setattr(analyzer, "_cache_ts_clubes", {})
+    monkeypatch.setattr(analyzer, "_cached_liga_ids", {})
+    return registro
+
+
+def test_load_and_fit_solo_usa_partidos_de_su_liga(monkeypatch):
+    """El bug latente: sin filtro por liga_id, el DC de Liga 1 se comía los ~3.2k
+    partidos internacionales que viven en la misma tabla `partidos`."""
+    _preparar_fit(monkeypatch)
+
+    model, matches, counts = analyzer._load_and_fit("liga1")
+
+    assert [m["equipo_local_id"] for m in matches] == ["E-ALI"]
+    assert set(counts) == {"E-ALI", "E-UNI"}
+
+
+def test_load_and_fit_premier_usa_sus_propios_partidos(monkeypatch):
+    _preparar_fit(monkeypatch)
+
+    _, matches, counts = analyzer._load_and_fit("premier")
+
+    assert [m["equipo_local_id"] for m in matches] == ["E-ARS"]
+    assert set(counts) == {"E-ARS", "E-CHE"}
+
+
+def test_load_and_fit_cachea_por_liga(monkeypatch):
+    _preparar_fit(monkeypatch)
+
+    m_l1, _, _ = analyzer._load_and_fit("liga1")
+    m_pl, _, _ = analyzer._load_and_fit("premier")
+    m_l1_otra_vez, _, _ = analyzer._load_and_fit("liga1")
+
+    assert m_l1 is not m_pl                 # un modelo por liga
+    assert m_l1 is m_l1_otra_vez            # y se cachea, no se reajusta
+
+
+def test_load_and_fit_liga_inexistente_falla_claro(monkeypatch):
+    _preparar_fit(monkeypatch)
+    monkeypatch.setitem(analyzer.SLUG_A_NOMBRE, "fantasma", "Liga Fantasma")
+
+    with pytest.raises(RuntimeError, match="Liga Fantasma"):
+        analyzer._load_and_fit("fantasma")
