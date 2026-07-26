@@ -81,10 +81,12 @@ def test_filas_partidos_salta_equipos_no_resueltos():
 
 def test_filas_partidos_mapea_estado_y_resultado():
     from download_fixtures import filas_partidos
+    # ids DISTINTOS para home/away: si el código llegara a intercambiarlos,
+    # la aserción de equipo_local_id/equipo_visitante_id de abajo debe fallar.
     equipo_map = {1: "uuid-home", 2: "uuid-away"}
 
-    ft_fixture = _fixture(fid=1, status="FT", gh=2, ga=1)
-    ns_fixture = _fixture(fid=2, status="NS", gh=None, ga=None)
+    ft_fixture = _fixture(fid=1, home_id=1, away_id=2, status="FT", gh=2, ga=1)
+    ns_fixture = _fixture(fid=2, home_id=1, away_id=2, status="NS", gh=None, ga=None)
 
     filas, saltados = filas_partidos([ft_fixture, ns_fixture],
                                       liga_id="liga-uuid", equipo_map=equipo_map)
@@ -95,10 +97,14 @@ def test_filas_partidos_mapea_estado_y_resultado():
     assert by_id[1]["estado"] == "FINISHED"
     assert by_id[1]["resultado"] == "HOME"
     assert by_id[1]["datos_completos"] is True
+    assert by_id[1]["equipo_local_id"] == "uuid-home"
+    assert by_id[1]["equipo_visitante_id"] == "uuid-away"
 
     assert by_id[2]["estado"] == "SCHEDULED"
     assert by_id[2]["resultado"] is None
     assert by_id[2]["datos_completos"] is False
+    assert by_id[2]["equipo_local_id"] == "uuid-home"
+    assert by_id[2]["equipo_visitante_id"] == "uuid-away"
 
 
 def test_api_get_detecta_cuota_agotada(monkeypatch):

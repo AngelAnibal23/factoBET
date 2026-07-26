@@ -22,6 +22,7 @@ from supabase import create_client
 
 API_URL = "https://v3.football.api-sports.io"
 BATCH = 50
+PAGINA_SUPABASE = 1000  # tope real de PostgREST por .select(); paginar con .range()
 
 
 @dataclass
@@ -146,26 +147,43 @@ def main(argv=None):
     print("\n[3/4] Upsert de equipos...")
     equipos = filas_equipos(fixtures, liga_id, cfg.pais)
     for i in range(0, len(equipos), BATCH):
-        sb.table("equipos").upsert(equipos[i:i + BATCH],
-                                   on_conflict="api_football_id").execute()
-    equipo_map = {e["api_football_id"]: e["id"] for e in
-                  sb.table("equipos").select("id,api_football_id").execute().data}
+        lote = equipos[i:i + BATCH]
+        sb.table("equipos").upsert(lote, on_conflict="api_football_id").execute()
+        print(f"  upsert equipos {i + 1}-{i + len(lote)}")
+
+    equipo_map = {}
+    desde = 0
+    while True:
+        pagina = (sb.table("equipos").select("id,api_football_id")
+                  .range(desde, desde + PAGINA_SUPABASE - 1).execute().data)
+        equipo_map.update({e["api_football_id"]: e["id"] for e in pagina})
+        if len(pagina) < PAGINA_SUPABASE:
+            break
+        desde += PAGINA_SUPABASE
     print(f"  equipos de esta liga: {len(equipos)}")
 
     print("\n[4/4] Upsert de partidos...")
     filas, saltados = filas_partidos(fixtures, liga_id, equipo_map)
-    insertados = 0
-    for i in range(0, len(filas), BATCH):
-        sb.table("partidos").upsert(filas[i:i + BATCH],
-                                    on_conflict="api_football_id").execute()
-        insertados += len(filas[i:i + BATCH])
-
-    print("\n" + "=" * 55)
-    print(f"  Liga            : {cfg.nombre} ({liga_id})")
-    print(f"  Equipos         : {len(equipos)}")
-    print(f"  Partidos        : {insertados}")
-    print(f"  Saltados        : {saltados}")
-    print("=" * 55)
+    print(f"  filas a insertar: {len(filas)} | saltados: {saltados}")
+    insertados, errores = 0, 0
+    try:
+        for i in range(0, len(filas), BATCH):
+            lote = filas[i:i + BATCH]
+            try:
+                sb.table("partidos").upsert(lote, on_conflict="api_football_id").execute()
+                insertados += len(lote)
+                print(f"  upsert partidos {i + 1}-{i + len(lote)}")
+            except Exception as e:   # noqa: BLE001 — un lote malo no debe tirar la corrida
+                errores += 1
+                print(f"  ERROR en el lote {i // BATCH + 1}: {e}")
+    finally:
+        print("\n" + "=" * 55)
+        print(f"  Liga            : {cfg.nombre} ({liga_id})")
+        print(f"  Equipos         : {len(equipos)}")
+        print(f"  Partidos        : {insertados}")
+        print(f"  Lotes con error : {errores}")
+        print(f"  Saltados        : {saltados}")
+        print("=" * 55)
 
 
 if __name__ == "__main__":
