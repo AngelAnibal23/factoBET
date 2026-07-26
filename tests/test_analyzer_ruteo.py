@@ -248,3 +248,30 @@ def test_load_and_fit_liga_inexistente_falla_claro(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Liga Fantasma"):
         analyzer._load_and_fit("fantasma")
+
+
+def test_liga_ingestada_despues_se_resuelve_sin_reiniciar(monkeypatch):
+    """warm_up() corre al arrancar el servidor y llama _load_and_fit("premier")
+    ANTES de que la Premier esté ingestada (su ingesta es una tarea posterior).
+    Ese primer fallo no debe envenenar el proceso: cuando la liga se ingesta de
+    verdad, debe resolverse sola sin reiniciar el servidor."""
+    ligas_sin_premier = [l for l in LIGAS if l["nombre"] != "Premier League"]
+    _fake_sb(monkeypatch, {"ligas": ligas_sin_premier, "equipos": EQUIPOS,
+                          "partidos": PARTIDOS})
+    monkeypatch.setattr(analyzer, "DixonColesModel", _FakeDC)
+    monkeypatch.setattr(analyzer, "_cached_clubes", {})
+    monkeypatch.setattr(analyzer, "_cache_ts_clubes", {})
+    monkeypatch.setattr(analyzer, "_cached_liga_ids", {})
+
+    with pytest.raises(RuntimeError, match="Premier League"):
+        analyzer._load_and_fit("premier")
+
+    # La liga se ingesta "de verdad": nuevo cliente falso cuyo `ligas` SÍ la trae.
+    # OJO: no se limpia _cached_liga_ids — así se prueba el auto-sane del proceso.
+    monkeypatch.setattr(analyzer, "create_client",
+                        lambda *_a, **_k: _FakeClient(
+                            {"ligas": LIGAS, "equipos": EQUIPOS, "partidos": PARTIDOS}, []))
+
+    _, matches, _ = analyzer._load_and_fit("premier")
+
+    assert [m["equipo_local_id"] for m in matches] == ["E-ARS"]
