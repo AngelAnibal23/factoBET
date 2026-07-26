@@ -15,8 +15,10 @@ from validator import ValidatedParlay, ValidatedSelection, TeamMatch
 # ── Cliente Supabase falso ────────────────────────────────────────────────────
 
 class _FakeTable:
-    def __init__(self, filas, registro, nombre):
+    def __init__(self, filas, registro, nombre, tope=1000):
         self._filas, self._reg, self._nombre = list(filas), registro, nombre
+        self._tope = tope
+        self._rango = None
 
     def select(self, *_a, **_k):
         return self
@@ -31,16 +33,25 @@ class _FakeTable:
         self._filas = [f for f in self._filas if f.get(col) in vals]
         return self
 
+    def range(self, desde, hasta):
+        self._reg.append((self._nombre, "range", desde, hasta))
+        self._rango = (desde, hasta)
+        return self
+
     def execute(self):
-        return SimpleNamespace(data=self._filas)
+        # PostgREST real: sin `.range()` corta en `tope` filas (1000 por defecto).
+        if self._rango is not None:
+            desde, hasta = self._rango
+            return SimpleNamespace(data=self._filas[desde:hasta + 1])
+        return SimpleNamespace(data=self._filas[:self._tope])
 
 
 class _FakeClient:
-    def __init__(self, tablas, registro):
-        self._tablas, self._reg = tablas, registro
+    def __init__(self, tablas, registro, tope=1000):
+        self._tablas, self._reg, self._tope = tablas, registro, tope
 
     def table(self, nombre):
-        return _FakeTable(self._tablas.get(nombre, []), self._reg, nombre)
+        return _FakeTable(self._tablas.get(nombre, []), self._reg, nombre, self._tope)
 
 
 LIGAS = [
@@ -275,6 +286,43 @@ def test_liga_ingestada_despues_se_resuelve_sin_reiniciar(monkeypatch):
     _, matches, _ = analyzer._load_and_fit("premier")
 
     assert [m["equipo_local_id"] for m in matches] == ["E-ARS"]
+
+
+def _partidos_premier_masivo(n=1140):
+    """n partidos FINISHED de Premier 2023, rotando entre 5 equipos para que
+    `counts` sea significativo."""
+    equipos = ["E-ARS", "E-CHE", "E-LIV", "E-MCI", "E-TOT"]
+    partidos = []
+    for i in range(n):
+        local = equipos[i % len(equipos)]
+        visitante = equipos[(i + 1) % len(equipos)]
+        partidos.append({
+            "liga_id": "L-EN", "equipo_local_id": local, "equipo_visitante_id": visitante,
+            "goles_local": i % 4, "goles_visitante": (i + 2) % 3,
+            "resultado": "HOME", "temporada": "2023",
+            "fecha": f"2023-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}T00:00:00+00:00",
+            "estado": "FINISHED",
+        })
+    return partidos
+
+
+def test_load_and_fit_pagina_mas_de_mil_partidos(monkeypatch):
+    """PostgREST corta un select en 1000 filas si no se pagina con `.range()`.
+    La Premier tendrá 1140 partidos FINISHED en 2022-2024: sin paginar,
+    _load_and_fit perdería ~140 partidos en silencio (justo lo que le pasaba a
+    la producción real, medido: 1000 de 4251)."""
+    partidos_premier = _partidos_premier_masivo(1140)
+    _fake_sb(monkeypatch, {"ligas": LIGAS, "equipos": EQUIPOS,
+                          "partidos": partidos_premier})
+    monkeypatch.setattr(analyzer, "DixonColesModel", _FakeDC)
+    monkeypatch.setattr(analyzer, "_cached_clubes", {})
+    monkeypatch.setattr(analyzer, "_cache_ts_clubes", {})
+    monkeypatch.setattr(analyzer, "_cached_liga_ids", {})
+
+    _, matches, counts = analyzer._load_and_fit("premier")
+
+    assert len(matches) == 1140
+    assert set(counts) == {"E-ARS", "E-CHE", "E-LIV", "E-MCI", "E-TOT"}
 
 
 # ── La ruta de clubes usa el modelo y los params de SU liga ───────────────────

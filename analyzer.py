@@ -78,6 +78,8 @@ COVERAGE_MEDIA = 10
 
 MODEL_TTL_HOURS = 6   # refit model every 6 hours
 
+PAGINA_SUPABASE = 1000   # PostgREST corta en 1000 filas si no se pagina con .range()
+
 KNOWN_CORRELATIONS = [
     {"m1": "home",  "m2": "over",  "tipo": "POSITIVA_ALTA",   "nota": "Las victorias locales amplias elevan los goles totales."},
     {"m1": "yes",   "m2": "over",  "tipo": "POSITIVA_MUY_ALTA","nota": "BTTS exige >=2 goles; over 2.5 exige >=3. Alta correlacion."},
@@ -549,15 +551,22 @@ def _load_and_fit(liga: str = "liga1") -> tuple[DixonColesModel, list[dict], dic
                 "Corre la ingesta de esa liga antes de analizar sus boletos."
             )
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-        rows = (
-            sb.table("partidos")
-            .select("equipo_local_id, equipo_visitante_id, goles_local, goles_visitante, resultado, temporada, fecha")
-            .eq("liga_id", liga_id)
-            .in_("temporada", TEMPORADAS_CLUBES)
-            .eq("estado", "FINISHED")
-            .execute()
-            .data
-        )
+        rows, desde = [], 0
+        while True:
+            chunk = (
+                sb.table("partidos")
+                .select("equipo_local_id, equipo_visitante_id, goles_local, goles_visitante, resultado, temporada, fecha")
+                .eq("liga_id", liga_id)
+                .in_("temporada", TEMPORADAS_CLUBES)
+                .eq("estado", "FINISHED")
+                .range(desde, desde + PAGINA_SUPABASE - 1)
+                .execute()
+                .data
+            )
+            rows.extend(chunk)
+            if len(chunk) < PAGINA_SUPABASE:
+                break
+            desde += PAGINA_SUPABASE
         matches = [r for r in rows if r["goles_local"] is not None]
         counts: dict[str, int] = {}
         for m in matches:
