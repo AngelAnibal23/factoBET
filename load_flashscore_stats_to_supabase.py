@@ -74,7 +74,9 @@ def main():
     run_ddl(DDL, mgmt_token)
 
     print("[2/3] Resolviendo equipos y construyendo filas...")
-    df = pd.read_csv(CSV)
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else CSV
+    print(f"  CSV: {csv_path}")
+    df = pd.read_csv(csv_path)
     teams = sb.table("equipos").select("id, nombre_oficial, aliases").execute().data
 
     cache = {}

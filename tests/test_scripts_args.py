@@ -130,3 +130,37 @@ def test_api_get_detecta_cuota_agotada(monkeypatch):
         download_fixtures.api_get("fixtures", {"league": 39, "season": 2025},
                                    api_key="fake-key")
     assert "plan" in str(exc_info.value)
+
+
+# ── download_flashscore_stats.py ──────────────────────────────────────────────
+
+def test_torneos_incluye_las_3_temporadas_de_premier():
+    """Slugs verificados el 2026-07-26 (HTTP 200 en flashscore.com)."""
+    import download_flashscore_stats as d
+    pl = [t for t in d.TOURNAMENTS if t[0] == "Premier League"]
+    assert [t[2] for t in pl] == ["2022", "2023", "2024"]
+    assert pl[0][1] == ("https://www.flashscore.com/football/england/"
+                        "premier-league-2022-2023/results/")
+
+
+def test_filtrar_torneos_por_liga():
+    import download_flashscore_stats as d
+    solo_pl = d.filtrar_torneos(d.TOURNAMENTS, "Premier League")
+    assert len(solo_pl) == 3
+    assert all(t[0] == "Premier League" for t in solo_pl)
+
+
+def test_filtrar_torneos_sin_filtro_devuelve_todo():
+    import download_flashscore_stats as d
+    assert d.filtrar_torneos(d.TOURNAMENTS, None) == d.TOURNAMENTS
+
+
+def test_filtrar_torneos_liga_inexistente_da_vacio():
+    import download_flashscore_stats as d
+    assert d.filtrar_torneos(d.TOURNAMENTS, "Premier") == []
+
+
+def test_descargar_con_lista_vacia_no_escribe_nada():
+    import download_flashscore_stats as d
+    with pytest.raises(SystemExit):
+        d.descargar([])
