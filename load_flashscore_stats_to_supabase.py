@@ -56,6 +56,37 @@ def run_ddl(sql, mgmt_token):
     return resp.json()
 
 
+def asegurar_tabla(sb, mgmt_token, ddl=DDL, tabla="estadisticas_flashscore"):
+    """Garantiza que la tabla exista antes de cargar.
+
+    El DDL va por la Management API, cuyo token caduca cada tanto. Si el DDL no
+    se puede correr (sin token o 401), NO se aborta: se comprueba que la tabla ya
+    exista con la key normal y se sigue avisando. Solo si tampoco existe se aborta,
+    porque entonces cargar es imposible.
+    """
+    if mgmt_token:
+        try:
+            run_ddl(ddl, mgmt_token)
+            return
+        except Exception as exc:
+            print(f"  ⚠️  DDL vía Management API falló ({exc}); "
+                  f"verificando si la tabla '{tabla}' ya existe...")
+    else:
+        print("  ⚠️  Sin SUPABASE_MANAGEMENT_TOKEN; "
+              f"verificando si la tabla '{tabla}' ya existe...")
+
+    try:
+        sb.table(tabla).select("event_id").limit(1).execute()
+    except Exception as exc:
+        raise SystemExit(
+            f"La tabla '{tabla}' no existe y no se pudo correr el DDL. "
+            f"Se necesita un SUPABASE_MANAGEMENT_TOKEN válido para crearla. "
+            f"Error de la verificación: {exc}"
+        )
+
+    print(f"  ✅ La tabla '{tabla}' ya existe; se continúa sin correr el DDL.")
+
+
 def _int(v):
     return None if pd.isna(v) else int(v)
 
@@ -67,11 +98,11 @@ def _real(v):
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     load_dotenv()
-    mgmt_token = os.environ["SUPABASE_MANAGEMENT_TOKEN"]
+    mgmt_token = os.environ.get("SUPABASE_MANAGEMENT_TOKEN")
     sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
     print("[1/3] DDL: tabla estadisticas_flashscore...")
-    run_ddl(DDL, mgmt_token)
+    asegurar_tabla(sb, mgmt_token)
 
     print("[2/3] Resolviendo equipos y construyendo filas...")
     csv_path = sys.argv[1] if len(sys.argv) > 1 else CSV

@@ -263,3 +263,79 @@ def test_manifiesto_incluye_la_premier():
     from download_sot_jugador import MANIFIESTO
     pl = [t for t in MANIFIESTO if t[0] == 39]
     assert pl and pl[0][1] == [2022, 2023, 2024]
+
+
+# ── load_flashscore_stats_to_supabase.py ──────────────────────────────────────
+
+class _FakeQuery:
+    def __init__(self, should_fail):
+        self.should_fail = should_fail
+
+    def select(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def execute(self):
+        if self.should_fail:
+            raise RuntimeError("tabla no existe")
+        return {"data": []}
+
+
+class _FakeSb:
+    def __init__(self, should_fail=False):
+        self.should_fail = should_fail
+        self.tabla_consultada = None
+
+    def table(self, nombre):
+        self.tabla_consultada = nombre
+        return _FakeQuery(self.should_fail)
+
+
+def test_asegurar_tabla_corre_el_ddl_si_hay_token(monkeypatch):
+    import load_flashscore_stats_to_supabase as mod
+
+    llamadas = []
+    monkeypatch.setattr(mod, "run_ddl", lambda ddl, token: llamadas.append((ddl, token)))
+
+    sb = _FakeSb(should_fail=True)  # si se llegara a probar la tabla, fallaría
+    mod.asegurar_tabla(sb, "fake-token")
+
+    assert llamadas == [(mod.DDL, "fake-token")]
+    assert sb.tabla_consultada is None  # el probe no hizo falta
+
+
+def test_asegurar_tabla_sigue_si_el_ddl_falla_pero_la_tabla_existe(monkeypatch):
+    import load_flashscore_stats_to_supabase as mod
+
+    def fake_run_ddl(ddl, token):
+        raise RuntimeError("401 Unauthorized")
+    monkeypatch.setattr(mod, "run_ddl", fake_run_ddl)
+
+    sb = _FakeSb(should_fail=False)
+    mod.asegurar_tabla(sb, "token-caducado")  # no debe lanzar
+
+
+def test_asegurar_tabla_aborta_si_no_hay_ddl_ni_tabla(monkeypatch):
+    import load_flashscore_stats_to_supabase as mod
+
+    def fake_run_ddl(ddl, token):
+        raise RuntimeError("401 Unauthorized")
+    monkeypatch.setattr(mod, "run_ddl", fake_run_ddl)
+
+    sb = _FakeSb(should_fail=True)
+    with pytest.raises(SystemExit):
+        mod.asegurar_tabla(sb, "token-caducado")
+
+
+def test_asegurar_tabla_sin_token_no_llama_al_ddl(monkeypatch):
+    import load_flashscore_stats_to_supabase as mod
+
+    llamadas = []
+    monkeypatch.setattr(mod, "run_ddl", lambda ddl, token: llamadas.append((ddl, token)))
+
+    sb = _FakeSb(should_fail=False)
+    mod.asegurar_tabla(sb, None)  # no debe lanzar
+
+    assert llamadas == []
