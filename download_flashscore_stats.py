@@ -53,6 +53,20 @@ TOURNAMENTS = [
 ]
 
 
+# XPath verificado en vivo el 2026-07-26 contra la Premier League: el control ya
+# no es `a.event__more`, es un contenedor data-testid="wcl-buttonLink" cuyo span
+# interno dice literalmente "Show more matches". Una temporada de Premier (380
+# partidos, 109 iniciales) necesitó 3 clicks para agotarse.
+XPATH_VER_MAS = '//span[text()="Show more matches"]/ancestor::*[@data-testid="wcl-buttonLink"][1]'
+MAX_CLICKS_VER_MAS = 30   # tope defensivo: si el sitio cambia de nuevo, no gira infinito
+
+
+def _sigue_creciendo(anterior: int, actual: int) -> bool:
+    """Pura: si el conteo de bloques de partido no creció tras un click, ya no
+    vale la pena seguir pidiendo "ver más" (fin de la lista o botón fantasma)."""
+    return actual > anterior
+
+
 def enumerar_partidos(sb, url):
     sb.uc_open_with_reconnect(url, reconnect_time=6)
     sb.sleep(8)
@@ -62,6 +76,23 @@ def enumerar_partidos(sb, url):
     except Exception:
         pass
     sb.sleep(3)
+
+    anterior = sb.get_page_source().count('id="g_1_')
+    for _ in range(MAX_CLICKS_VER_MAS):
+        try:
+            if not sb.is_element_visible(XPATH_VER_MAS):
+                break
+            sb.click(XPATH_VER_MAS)
+            sb.sleep(2)
+        except Exception as e:
+            print(f"  ver más: click falló, se detiene ({e})")
+            break
+        actual = sb.get_page_source().count('id="g_1_')
+        print(f"  ver más: {anterior} -> {actual} partidos")
+        if not _sigue_creciendo(anterior, actual):
+            break
+        anterior = actual
+
     return parse_results(sb.get_page_source())
 
 

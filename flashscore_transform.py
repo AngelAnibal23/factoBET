@@ -27,8 +27,28 @@ def parse_stats_feed(text: str) -> dict:
     return out
 
 
-_DATE_RE = re.compile(r'event__time">(\d{2})\.(\d{2})\.(\d{4})')
+_DATE_RE = re.compile(r'(\d{2})\.(\d{2})\.(\d{4})')
 _ALT_RE = re.compile(r'data-testid="wcl-participantLogo"[^>]*?alt="([^"]+)"')
+
+# Flashscore renombró el contenedor de la fecha del partido: hasta jun-2026 era
+# `event__time">DD.MM.YYYY`; desde jul-2026 es un span con clase que contiene
+# `event__stageTime--date`, con la fecha en un span ANIDADO adentro (ya no pegada
+# al nombre de la clase). Se busca la primera marca conocida y, dentro de una
+# ventana acotada después de ella, la primera fecha DD.MM.YYYY.
+_MARCAS_FECHA = ("event__stageTime", "event__time")
+
+
+def _fecha_de_bloque(b: str):
+    """(d, m, y) de la fecha del partido dentro del bloque, o None si no se
+    encuentra ninguna marca conocida ni fecha alguna cerca del principio."""
+    for marca in _MARCAS_FECHA:
+        i = b.find(marca)
+        if i != -1:
+            m = _DATE_RE.search(b, i, i + 600)
+            if m:
+                return m.groups()
+    m = _DATE_RE.search(b[:1200])
+    return m.groups() if m else None
 
 
 def parse_results(html: str) -> list:
@@ -40,10 +60,10 @@ def parse_results(html: str) -> list:
         eid = b[:8]
         if not eid.isalnum():
             continue
-        dm = _DATE_RE.search(b[:1200])
+        dm = _fecha_de_bloque(b)
         alts = _ALT_RE.findall(b[:2500])
         if dm and len(alts) >= 2:
-            d, mth, y = dm.groups()
+            d, mth, y = dm
             out.append({
                 "event_id": eid,
                 "fecha": f"{y}-{mth}-{d}",
