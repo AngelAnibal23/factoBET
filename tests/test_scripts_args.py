@@ -164,3 +164,51 @@ def test_descargar_con_lista_vacia_no_escribe_nada():
     import download_flashscore_stats as d
     with pytest.raises(SystemExit):
         d.descargar([])
+
+
+def test_rendimiento_sospechoso_detecta_cero():
+    import download_flashscore_stats as d
+    assert d.rendimiento_sospechoso(0) is True
+
+
+def test_rendimiento_sospechoso_detecta_pocos():
+    import download_flashscore_stats as d
+    assert d.rendimiento_sospechoso(3) is True
+
+
+def test_rendimiento_normal_no_alarma():
+    import download_flashscore_stats as d
+    assert d.rendimiento_sospechoso(380) is False
+    assert d.rendimiento_sospechoso(30) is False  # el umbral mismo NO alarma
+
+
+def test_descargar_sin_filas_no_escribe_csv(monkeypatch, tmp_path):
+    """Un torneo que enumera partidos pero para el que nunca se junta ninguna
+    fila con stats (ej. bajar_stats siempre falla) no debe pisar un CSV bueno
+    existente. Se evita abrir un browser real inyectando un módulo `seleniumbase`
+    falso en sys.modules (el import es lazy dentro de descargar()) y
+    monkeypatcheando enumerar_partidos para no depender del DOM."""
+    import sys
+    import types
+    import download_flashscore_stats as d
+
+    fake_module = types.ModuleType("seleniumbase")
+
+    class FakeSB:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    fake_module.SB = FakeSB
+    monkeypatch.setitem(sys.modules, "seleniumbase", fake_module)
+    monkeypatch.setattr(d, "enumerar_partidos", lambda sb, url: [])
+
+    salida = tmp_path / "flashscore_stats.csv"
+    with pytest.raises(SystemExit):
+        d.descargar([("Liga X", "http://example.com", "2024")], salida=str(salida))
+    assert not salida.exists()

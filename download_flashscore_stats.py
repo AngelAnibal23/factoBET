@@ -110,6 +110,19 @@ def filtrar_torneos(tournaments, liga=None):
     return [t for t in tournaments if t[0] == liga]
 
 
+# Una liga o torneo real de UNA temporada completa entrega muchas decenas o
+# cientos de partidos (Premier: 380). Si un torneo devuelve menos que esto casi
+# seguro NO es que el torneo sea así de chico: es que Flashscore volvió a
+# cambiar el marcado (como pasó jul-2026 con el contenedor de fecha y con el
+# botón "ver más" — un scrape roto devolvía 0 partidos en silencio).
+MIN_PARTIDOS_ESPERADOS = 30
+
+
+def rendimiento_sospechoso(n_partidos: int, minimo: int = MIN_PARTIDOS_ESPERADOS) -> bool:
+    """True si un torneo devolvió tan pocos partidos que huele a marcado roto."""
+    return n_partidos < minimo
+
+
 def descargar(tournaments=None, salida=SALIDA):
     tournaments = TOURNAMENTS if tournaments is None else tournaments
     if not tournaments:
@@ -120,14 +133,24 @@ def descargar(tournaments=None, salida=SALIDA):
         )
     from seleniumbase import SB              # solo existe en .venv-fbref
     filas = []
+    resumen = []   # (liga, season, n_partidos, n_filas)
     with SB(uc=True, headless=True) as sb:
         for liga, url, season in tournaments:
             try:
                 partidos = enumerar_partidos(sb, url)
             except Exception as e:
                 print(f"  WARN {liga} {season}: no se pudo cargar ({e})")
+                resumen.append((liga, season, 0, 0))
                 continue
             print(f"  {liga} {season}: {len(partidos)} partidos")
+            if rendimiento_sospechoso(len(partidos)):
+                print(
+                    f"⚠⚠ ATENCION: '{liga}' {season} devolvio solo {len(partidos)} "
+                    f"partidos (esperados >={MIN_PARTIDOS_ESPERADOS}).\n"
+                    "   Casi seguro Flashscore cambio el marcado otra vez: revisar "
+                    "parse_results y el boton \"ver mas\" ANTES de confiar en este CSV."
+                )
+            antes = len(filas)
             for m in partidos:
                 try:
                     stats = bajar_stats(m["event_id"])
@@ -136,8 +159,22 @@ def descargar(tournaments=None, salida=SALIDA):
                 if stats:
                     filas.extend(tidy_match(m, stats, liga, season))
                 time.sleep(0.3)   # cortesía con el feed
+            resumen.append((liga, season, len(partidos), len(filas) - antes))
+
+    if not filas:
+        raise SystemExit(
+            "Scrape sin filas: ningún torneo produjo partidos con stats. NO se "
+            f"escribe '{salida}' (se protege un CSV bueno existente). Revisar "
+            "parse_results / enumerar_partidos antes de reintentar."
+        )
+
     out = pd.DataFrame(filas).drop_duplicates(subset=["event_id", "equipo_flashscore"])
     out.to_csv(salida, index=False, encoding="utf-8")
+
+    print(f"\nResumen: {len(out)} filas totales (partido-equipo)")
+    for liga, season, n_partidos, n_filas in resumen:
+        print(f"  {liga} {season}: {n_partidos} partidos -> {n_filas} filas")
+
     return out
 
 
