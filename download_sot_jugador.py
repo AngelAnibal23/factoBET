@@ -36,6 +36,7 @@ MANIFIESTO = [
     (5,  [2022, 2024]),      # Nations League
     (9,  [2024]),            # Copa America
     (34, [2022]),            # WC Qualification CONMEBOL (ciclo 2020-2022; plan Free solo 2022-2024)
+    (39, [2022, 2023, 2024]),  # Premier League (plan Free: solo estas 3)
     # añadir clasificatorias/amistosos según presupuesto disponible
 ]
 

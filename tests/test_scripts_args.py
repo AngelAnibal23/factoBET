@@ -255,3 +255,11 @@ def test_event_ids_deduplica_y_preserva_orden(tmp_path):
         encoding="utf-8",
     )
     assert _event_ids(str(ruta)) == ["b", "a", "c"]
+
+
+# ── download_sot_jugador.py ───────────────────────────────────────────────────
+
+def test_manifiesto_incluye_la_premier():
+    from download_sot_jugador import MANIFIESTO
+    pl = [t for t in MANIFIESTO if t[0] == 39]
+    assert pl and pl[0][1] == [2022, 2023, 2024]
