@@ -85,3 +85,33 @@ def test_payload_publicado_es_leible_por_playermodel():
     modelo = PlayerModel.from_params(payload)
 
     assert modelo.tiene("p1", "goal") is True
+
+
+# ── fit_player_sot ────────────────────────────────────────────────────────────
+
+def _reg_sot(equipo, pid):
+    return {"event_id": f"e-{pid}", "player_id": pid, "nombre": pid,
+            "equipo": equipo, "sot_jugador": 1, "sot_equipo": 5, "n_titulares": 11}
+
+
+def test_sot_agrupa_registros_por_liga():
+    from fit_player_sot import agrupar_por_liga
+    regs = [_reg_sot("Argentina", "p1"), _reg_sot("Arsenal", "p2")]
+
+    por_liga = agrupar_por_liga(regs, LIGA_DE_EQUIPO)
+
+    assert set(por_liga) == {"Internacional", "Premier League"}
+
+
+def test_sot_descarta_equipos_sin_liga():
+    from fit_player_sot import agrupar_por_liga
+    regs = [_reg_sot("Arsenal", "p1"), _reg_sot("Equipo Fantasma", "p2")]
+
+    assert list(agrupar_por_liga(regs, LIGA_DE_EQUIPO)) == ["Premier League"]
+
+
+def test_sot_ligas_publicables():
+    from load_player_sot_to_supabase import ligas_publicables
+    params = {"Internacional": {"metricas": ["sot"], "jugadores": {"p": {}}},
+              "Premier League": {"metricas": [], "jugadores": {"q": {}}}}
+    assert list(ligas_publicables(params)) == ["Internacional"]
