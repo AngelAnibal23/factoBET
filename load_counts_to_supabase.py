@@ -19,8 +19,9 @@ from supabase import create_client
 from fit_counts_model import main as fit_main
 
 VERSION = "counts_v0.1"
-# nombre de liga en `ligas` para cada liga_key del fit
-LIGA_NOMBRE = {"INT": "Internacional", "Liga 1 Peru": "Liga 1 Peruana"}
+# etiqueta de liga del scrape (columna `liga`) -> nombre en la tabla `ligas`
+LIGA_NOMBRE = {"INT": "Internacional", "Liga 1 Peru": "Liga 1 Peruana",
+               "Premier League": "Premier League"}
 
 
 def main():

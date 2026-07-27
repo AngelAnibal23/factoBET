@@ -212,3 +212,14 @@ def test_descargar_sin_filas_no_escribe_csv(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         d.descargar([("Liga X", "http://example.com", "2024")], salida=str(salida))
     assert not salida.exists()
+
+
+# ── load_counts_to_supabase.py ────────────────────────────────────────────────
+
+def test_mapa_de_ligas_de_conteos_incluye_premier():
+    """fit_counts_model agrupa por la columna `liga` del scrape; el loader traduce
+    esa etiqueta al nombre de la tabla `ligas`."""
+    from load_counts_to_supabase import LIGA_NOMBRE
+    assert LIGA_NOMBRE["Premier League"] == "Premier League"
+    assert LIGA_NOMBRE["INT"] == "Internacional"
+    assert LIGA_NOMBRE["Liga 1 Peru"] == "Liga 1 Peruana"
