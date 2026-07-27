@@ -29,6 +29,22 @@ LAMBDA_PROXY = 1.0    # goles esperados por equipo (proxy de liga). Tasa real tr
                       # Solo fallback: el gate usa lambdas_por_equipo (el proxy plano
                       # sub-predecía la cola elite y sobre-predecía equipos débiles).
 K_LAMBDA = 5.0        # partidos virtuales hacia la media global en lambdas_por_equipo
+MIN_REGISTROS_LIGA = 500   # por debajo de esto el gate de una liga no dice nada
+
+
+def agrupar_por_liga(regs: list[dict], liga_de_equipo: dict[str, str]) -> dict[str, list[dict]]:
+    """{liga: [registros]} usando la liga del equipo del registro.
+
+    Los registros de equipos sin liga conocida se descartan: mezclarlos fue lo que
+    metió 11.140 filas de Liga 1 Peruana en los params publicados como
+    'Internacional'.
+    """
+    por_liga = defaultdict(list)
+    for r in regs:
+        liga = liga_de_equipo.get(r["equipo"])
+        if liga:
+            por_liga[liga].append(r)
+    return dict(por_liga)
 
 
 def lambdas_por_equipo(registros: list[dict], k: float = K_LAMBDA):
@@ -115,10 +131,14 @@ def _gate(train, test, metrica, min_partidos=MIN_PARTIDOS):
 
 
 def _cargar(sb):
-    """Eventos (con equipo canónico), titulares por (event,equipo), y fecha por event."""
-    # equipo_id -> nombre canónico
-    eq = {e["id"]: e["nombre_oficial"]
-          for e in sb.table("equipos").select("id,nombre_oficial").execute().data}
+    """Eventos (con equipo canónico), titulares por (event,equipo), fecha por event
+    y el mapa nombre_de_equipo -> liga (para el split por liga)."""
+    ligas = {l["id"]: l["nombre"]
+             for l in sb.table("ligas").select("id,nombre").execute().data}
+    eq, liga_de_equipo = {}, {}
+    for e in sb.table("equipos").select("id,nombre_oficial,liga_id").execute().data:
+        eq[e["id"]] = e["nombre_oficial"]
+        liga_de_equipo[e["nombre_oficial"]] = ligas.get(e["liga_id"])
     # fecha por event_id
     fecha_ev = {}
     desde, paso = 0, 1000
@@ -152,32 +172,39 @@ def _cargar(sb):
         if len(chunk) < paso:
             break
         desde += paso
-    return eventos, dict(titulares), fecha_ev
+    return eventos, dict(titulares), fecha_ev, liga_de_equipo
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     load_dotenv()
     sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-    eventos, titulares, fecha_ev = _cargar(sb)
+    eventos, titulares, fecha_ev, liga_de_equipo = _cargar(sb)
     regs = registros_desde_eventos(eventos, titulares)
     regs.sort(key=lambda r: fecha_ev.get(r["event_id"], ""))
-    corte = int(len(regs) * (1 - TEST_FRAC))
-    train, test = regs[:corte], regs[corte:]
 
-    metricas_ok = []
-    print("=" * 60, "\nFIT MODELO POR-JUGADOR — gate (liga INT)\n", "=" * 60)
-    for metrica in ("goal", "assist"):
-        bm, bb = _gate(train, test, metrica)
-        mejora = (bb - bm) / bb if bb > 0 else 0.0
-        ok = bm < bb and mejora >= GATE_MIN_MEJORA
-        print(f"  {metrica:6}: Brier modelo={bm:.4f} base={bb:.4f} "
-              f"mejora={mejora*100:+.1f}%  {'✅ PASA' if ok else '❌ no pasa'}")
-        if ok:
-            metricas_ok.append(metrica)
-    # producción = todos los datos, pero solo jugadores elegibles (>= MIN_PARTIDOS)
-    cuotas_prod = estimar_cuotas(regs, k=K_SHRINK, min_partidos=MIN_PARTIDOS)
-    return {"metricas": metricas_ok, "jugadores": cuotas_prod}
+    print("=" * 60, "\nFIT MODELO POR-JUGADOR — gate por liga\n", "=" * 60)
+    salida = {}
+    for liga, regs_liga in sorted(agrupar_por_liga(regs, liga_de_equipo).items()):
+        print(f"\n── Liga: {liga} ({len(regs_liga)} registros) ──")
+        if len(regs_liga) < MIN_REGISTROS_LIGA:
+            print(f"  muestra insuficiente (< {MIN_REGISTROS_LIGA}) — SKIP")
+            continue
+        corte = int(len(regs_liga) * (1 - TEST_FRAC))
+        train, test = regs_liga[:corte], regs_liga[corte:]
+        metricas_ok = []
+        for metrica in ("goal", "assist"):
+            bm, bb = _gate(train, test, metrica)
+            mejora = (bb - bm) / bb if bb > 0 else 0.0
+            ok = bm < bb and mejora >= GATE_MIN_MEJORA
+            print(f"  {metrica:6}: Brier modelo={bm:.4f} base={bb:.4f} "
+                  f"mejora={mejora * 100:+.1f}%  {'✅ PASA' if ok else '❌ no pasa'}")
+            if ok:
+                metricas_ok.append(metrica)
+        cuotas_prod = estimar_cuotas(regs_liga, k=K_SHRINK, min_partidos=MIN_PARTIDOS)
+        print(f"  jugadores publicables: {len(cuotas_prod)}")
+        salida[liga] = {"metricas": metricas_ok, "jugadores": cuotas_prod}
+    return salida
 
 
 if __name__ == "__main__":
