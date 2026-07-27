@@ -115,8 +115,10 @@ def descubrir(sb, key):
 
 
 def hidratar(sb, key, presupuesto):
-    # liga_api_id desc => primero 34 (quals CONMEBOL) y 9 (Copa América):
-    # densifica sudamericanos (Messi & co.) para el umbral >=10 del gate.
+    # liga_api_id desc => hoy manda 39 (Premier), que es lo único pendiente;
+    # cuando el backfill internacional estaba abierto priorizaba 34 (quals
+    # CONMEBOL) y 9 (Copa América) para densificar sudamericanos. El criterio
+    # es el mismo: repetir jugadores hasta el umbral >=10 partidos del gate.
     prog = (sb.table("sot_backfill_progreso").select("event_id,estado,fecha")
             .eq("estado", "pendiente").order("liga_api_id", desc=True)
             .limit(presupuesto).execute().data)
