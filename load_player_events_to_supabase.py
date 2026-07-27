@@ -52,8 +52,10 @@ def main():
 
     # agrega por (event_id, player_id, tipo): un jugador puede anotar/asistir 2+ veces
     # en un partido -> cantidad>1 (necesario para "anota 2+" y para el reparto de goles).
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else "player_events.csv"
+    print(f"  CSV: {csv_path}")
     agg = {}
-    with open("player_events.csv", encoding="utf-8") as f:
+    with open(csv_path, encoding="utf-8") as f:
         for r in csv.DictReader(f):
             k = (r["event_id"], r["player_id"], r["tipo"])
             if k not in agg:

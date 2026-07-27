@@ -23,11 +23,10 @@ jugador en partidos de club). El lado se resuelve a equipo_id contra es_local en
 Ver player_events_transform.py.
 """
 
+import argparse
 import csv
 import sys
 import time
-
-from curl_cffi import requests as cr
 
 from player_events_transform import eventos_completos, parse_lineup
 
@@ -37,16 +36,24 @@ ENTRADA = "flashscore_stats.csv"
 SALIDA = "player_events.csv"
 
 
+def parsear_args(argv):
+    p = argparse.ArgumentParser()
+    p.add_argument("--entrada", default=ENTRADA, help="CSV con los event_id ya scrapeados")
+    p.add_argument("--salida", default=SALIDA)
+    return p.parse_args(argv)
+
+
 def _feed(nombre: str) -> str:
+    from curl_cffi import requests as cr   # solo existe en .venv-fbref
     r = cr.get(f"{FEED}/{nombre}", headers=HDR, impersonate="chrome", timeout=20)
     return r.content.decode("utf-8", "replace")
 
 
-def _event_ids():
+def _event_ids(entrada):
     """event_ids distintos de flashscore_stats.csv (ya scrapeados)."""
     ids = []
     visto = set()
-    with open(ENTRADA, encoding="utf-8") as f:
+    with open(entrada, encoding="utf-8") as f:
         for r in csv.DictReader(f):
             eid = r.get("event_id")
             if eid and eid not in visto:
@@ -80,10 +87,11 @@ def bajar_partido(eid: str) -> list[dict]:
     return filas
 
 
-def main():
+def main(argv=None):
     sys.stdout.reconfigure(encoding="utf-8")
-    ids = _event_ids()
-    print(f"{len(ids)} partidos a procesar (desde {ENTRADA})")
+    args = parsear_args(sys.argv[1:] if argv is None else argv)
+    ids = _event_ids(args.entrada)
+    print(f"{len(ids)} partidos a procesar (desde {args.entrada})")
     todos = []
     for i, eid in enumerate(ids, 1):
         try:
@@ -93,12 +101,12 @@ def main():
         if i % 50 == 0:
             print(f"  {i}/{len(ids)}…")
         time.sleep(0.2)   # cortesía con el feed
-    with open(SALIDA, "w", newline="", encoding="utf-8") as f:
+    with open(args.salida, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["event_id", "player_id", "nombre",
                                           "tipo", "lado", "fue_titular"])
         w.writeheader()
         w.writerows(todos)
-    print(f"✅ {len(todos)} filas -> {SALIDA}")
+    print(f"✅ {len(todos)} filas -> {args.salida}")
 
 
 if __name__ == "__main__":

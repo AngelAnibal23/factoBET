@@ -223,3 +223,35 @@ def test_mapa_de_ligas_de_conteos_incluye_premier():
     assert LIGA_NOMBRE["Premier League"] == "Premier League"
     assert LIGA_NOMBRE["INT"] == "Internacional"
     assert LIGA_NOMBRE["Liga 1 Peru"] == "Liga 1 Peruana"
+
+
+# ── download_player_events.py ─────────────────────────────────────────────────
+
+def test_rutas_player_events_por_defecto():
+    from download_player_events import parsear_args
+    a = parsear_args([])
+    assert a.entrada == "flashscore_stats.csv"
+    assert a.salida == "player_events.csv"
+
+
+def test_rutas_player_events_premier():
+    from download_player_events import parsear_args
+    a = parsear_args(["--entrada", "flashscore_stats_pl.csv",
+                      "--salida", "player_events_pl.csv"])
+    assert a.entrada == "flashscore_stats_pl.csv"
+    assert a.salida == "player_events_pl.csv"
+
+
+def test_event_ids_deduplica_y_preserva_orden(tmp_path):
+    from download_player_events import _event_ids
+    ruta = tmp_path / "flashscore_stats.csv"
+    ruta.write_text(
+        "event_id,otro\n"
+        "b,1\n"
+        "a,2\n"
+        "b,3\n"
+        "c,4\n"
+        "a,5\n",
+        encoding="utf-8",
+    )
+    assert _event_ids(str(ruta)) == ["b", "a", "c"]
