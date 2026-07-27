@@ -42,6 +42,62 @@ def test_sin_alias_alemania_no_matchea_germany():
     assert m.canonical != "Germany" or m.status != "MATCHED"
 
 
+# ── Nombre corto colándose DENTRO de una palabra (bug "Mali") ─────────────────
+
+TEAMS_MALI = [
+    {"id": "ml", "nombre_oficial": "Mali", "aliases": []},
+    {"id": "ud", "nombre_oficial": "Universitario", "aliases": []},
+    {"id": "as", "nombre_oficial": "AS Roma", "aliases": []},
+]
+
+
+def test_nombre_corto_no_matchea_dentro_de_una_palabra():
+    # "Alianza Huanuco" (club de Liga 1 que NO está en equipos) puntuaba 0.857
+    # contra la seleccion de Mali porque partial_ratio encuentra "ali" DENTRO de
+    # "Alianza". Debe quedar huerfano, no colarse como internacional.
+    m = _best_match("Alianza Huanuco", TEAMS_MALI)
+    assert m.score < MATCH_AUTO
+    assert not (m.canonical == "Mali" and m.status == "MATCHED")
+
+
+def test_subcadena_de_palabras_completas_sigue_matcheando():
+    # El caso que partial_ratio SI debe cubrir: un nombre es el otro con palabras
+    # de mas. No se puede romper al arreglar el de arriba.
+    m = _best_match("Universitario de Deportes", TEAMS_MALI)
+    assert m.status == "MATCHED"
+    assert m.canonical == "Universitario"
+
+    m2 = _best_match("Roma", TEAMS_MALI)
+    assert m2.status == "MATCHED"
+    assert m2.canonical == "AS Roma"
+
+
+def test_abreviatura_de_palabra_sigue_matcheando():
+    # "Alianza Atl." -> "Alianza Atletico": la palabra corta es PREFIJO de la larga.
+    teams = [{"id": "aa", "nombre_oficial": "Alianza Atletico", "aliases": []}]
+    m = _best_match("Alianza Atl.", teams)
+    assert m.status == "MATCHED"
+    assert m.canonical == "Alianza Atletico"
+
+
+# ── Empate entre un nombre y otro que lo contiene ─────────────────────────────
+
+TEAMS_NIGER = [
+    {"id": "ne", "nombre_oficial": "Niger", "aliases": []},
+    {"id": "ng", "nombre_oficial": "Nigeria", "aliases": []},
+]
+
+
+def test_gana_el_nombre_entero_mas_parecido_no_el_orden_de_la_lista():
+    # "Nigeria" empata a 1.0 contra Niger (partial) y contra Nigeria (exacto);
+    # antes decidia el orden en que Supabase devolvia las filas.
+    for orden in (TEAMS_NIGER, list(reversed(TEAMS_NIGER))):
+        m = _best_match("Nigeria", orden)
+        assert m.canonical == "Nigeria", f"orden {[t['id'] for t in orden]}"
+        m2 = _best_match("Niger", orden)
+        assert m2.canonical == "Niger", f"orden {[t['id'] for t in orden]}"
+
+
 # ── Bet builder (Fase 1) ──────────────────────────────────────────────────────
 
 import pytest

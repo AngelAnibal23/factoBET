@@ -16,6 +16,7 @@ Match confidence:
 """
 
 import os
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Optional
@@ -126,6 +127,33 @@ def _load_teams() -> list[dict]:
 
 # ── Fuzzy matching ────────────────────────────────────────────────────────────
 
+_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+
+
+def _tokens(s: str) -> set:
+    return set(_TOKEN_RE.findall(s.lower()))
+
+
+def _cubre_por_prefijo(a: set, b: set) -> bool:
+    """Cada palabra de `a` arranca alguna palabra de `b` ("atl" → "atletico")."""
+    return all(any(tb.startswith(ta) for tb in b) for ta in a)
+
+
+def _partial_es_confiable(raw_norm: str, cand_norm: str) -> bool:
+    """partial_ratio desliza el string CORTO sobre el largo, así que un nombre
+    corto puede colarse dentro de una PALABRA del otro: "Mali" cae dentro de
+    "Alianza" ("ali") y puntúa 0.857, por encima del auto-match. Solo lo
+    aceptamos cuando un nombre es el otro con palabras de más o abreviadas
+    ("Universitario" ⊂ "Universitario de Deportes", "Alianza Atl." ⊂ "Alianza
+    Atletico"), que es el caso para el que se puso. Si no, queda solo
+    token_sort_ratio, que compara los nombres enteros.
+    """
+    a, b = _tokens(raw_norm), _tokens(cand_norm)
+    if not a or not b:
+        return False
+    return _cubre_por_prefijo(a, b) or _cubre_por_prefijo(b, a)
+
+
 def _best_match(raw: str, teams: list[dict]) -> TeamMatch:
     """Return the best fuzzy match for a raw team name."""
     if not raw:
@@ -134,6 +162,7 @@ def _best_match(raw: str, teams: list[dict]) -> TeamMatch:
 
     raw_norm = raw.strip().lower()
     best_score = 0.0
+    best_desempate = -1.0   # similitud del nombre ENTERO, solo para empates
     best_team  = None
 
     for t in teams:
@@ -143,14 +172,20 @@ def _best_match(raw: str, teams: list[dict]) -> TeamMatch:
 
         for candidate in candidates:
             cand_norm = candidate.lower()
-            # partial_ratio catches "Universitario de Deportes" → "Universitario"
+            # partial_ratio catches "Universitario de Deportes" → "Universitario",
+            # pero solo si es subcadena de PALABRAS completas (ver _partial_es_confiable).
             # token_sort_ratio handles word-order differences ("Lima Alianza" vs "Alianza Lima")
-            score = max(
-                fuzz.partial_ratio(raw_norm, cand_norm),
-                fuzz.token_sort_ratio(raw_norm, cand_norm),
-            ) / 100.0
-            if score > best_score:
+            entero = fuzz.token_sort_ratio(raw_norm, cand_norm)
+            puntajes = [entero]
+            if _partial_es_confiable(raw_norm, cand_norm):
+                puntajes.append(fuzz.partial_ratio(raw_norm, cand_norm))
+            score = max(puntajes) / 100.0
+            # Empate a tope: gana el nombre ENTERO más parecido. Sin esto,
+            # "Nigeria" y "Niger" empatan a 1.0 (partial) y decide el orden en
+            # que Supabase devolvió las filas — así "Nigeria" caía en Niger.
+            if (score, entero) > (best_score, best_desempate):
                 best_score = score
+                best_desempate = entero
                 best_team  = t
 
     if best_team is None or best_score < MATCH_CONFIRM:
