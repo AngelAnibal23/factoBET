@@ -308,47 +308,87 @@ async def analizar_parlay(
     return JSONResponse(content=_ok(data, ms, result.version_modelo))
 
 
+_OCR_DEMO_INTL = {
+    "selecciones": [
+        {"equipo_local": "Argentina", "equipo_visitante": "Austria",
+         "mercado": "1X2", "seleccion": "home", "cuota": None, "linea": None},
+        {"equipo_local": "Argentina", "equipo_visitante": "Austria",
+         "mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 1.5},
+        {"equipo_local": "Argentina", "equipo_visitante": "Austria",
+         "mercado": "player", "seleccion": "yes", "player": "Lionel Messi",
+         "metric": "sot", "umbral": 1, "faltante": False,
+         "cuota": None, "linea": None},
+    ],
+    "cuota_total": 1.87,
+    "casa_apuestas": "Betano",
+}
+
+# Man City vs Arsenal, nombres tal cual los escribiría una casa de apuestas
+# ("Man City" en vez de "Manchester City"): el demo también prueba que los
+# aliases resuelven. Solo goles/totales: counts_v0.1 aún no está publicado
+# para la Premier (parametros_modelo vacío para su liga_id), así que una pata
+# `count` caería exótica sin aportar nada al gate visual.
+_OCR_DEMO_PREMIER = {
+    "selecciones": [
+        {"equipo_local": "Man City", "equipo_visitante": "Arsenal",
+         "mercado": "1X2", "seleccion": "home", "cuota": None, "linea": None},
+        {"equipo_local": "Man City", "equipo_visitante": "Arsenal",
+         "mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 2.5},
+    ],
+    "cuota_total": 1.75,
+    "casa_apuestas": "Betano",
+}
+
+_AUSENTES_DEMO = {"equipos": {
+    "Argentina": [
+        {"nombre": "Lionel Messi", "estado": "out",
+         "motivo": "Injured - Muscle", "posicion": None},
+        {"nombre": "Angel Di Maria", "estado": "doubtful",
+         "motivo": "Knock", "posicion": None}],
+    "Austria": [
+        {"nombre": "David Alaba", "estado": "out",
+         "motivo": "Suspended", "posicion": "D"}]},
+    "url": "https://www.sofascore.com/football/match/argentina-austria/demo",
+    "scrapeado_en": "2026-07-22T12:00:00"}
+
+
+def _ocr_demo(case: str) -> dict:
+    """Bet builder hardcoded para el endpoint /demo. `?case=premier` arma el de
+    la Premier League; cualquier otro valor (incl. vacío o "ausencias") arma el
+    internacional de siempre."""
+    return _OCR_DEMO_PREMIER if case == "premier" else _OCR_DEMO_INTL
+
+
+def _payload_ausencias_demo(case: str) -> dict:
+    """Payload de ausencias a inyectar en caché. Solo `?case=ausencias` trae
+    ausentes reales (para ver el AusenciasBlock); todo lo demás es `sin_dato`."""
+    return _AUSENTES_DEMO if case == "ausencias" else {"sin_dato": True}
+
+
 @app.get("/api/v1/parlay/demo")
 async def parlay_demo(case: str = ""):
-    """Verificación visual SIN Gemini: corre el motor real sobre el bet builder de
-    ejemploBET3 (Argentina vs Austria) y devuelve el mismo envelope que el análisis
-    normal. Útil cuando la cuota de OCR está agotada. No persiste ni llama al OCR.
+    """Verificación visual SIN Gemini: corre el motor real sobre un bet builder
+    hardcoded y devuelve el mismo envelope que el análisis normal. Útil cuando
+    la cuota de OCR está agotada. No persiste ni llama al OCR.
 
-    Siempre inyecta una caché de ausencias (así el demo NO dispara el scrape real de
-    ~2 min): `?case=ausencias` inyecta ausentes reales (Messi out -> pata muerta +
-    Di María en duda + Alaba out) para ver el AusenciasBlock; sin case, `sin_dato`."""
+    Sin `case` (o cualquier valor no reconocido): bet builder internacional de
+    ejemploBET3 (Argentina vs Austria). `?case=ausencias` inyecta ausentes reales
+    sobre ese mismo slip (Messi out -> pata muerta + Di María en duda + Alaba out)
+    para ver el AusenciasBlock. `?case=premier` arma un bet builder de la Premier
+    League (Man City vs Arsenal, 1X2 + total de goles) para verificar la nueva
+    liga de clubes.
+
+    Siempre inyecta una caché de ausencias keyed por los equipos DEL SLIP que se
+    esté sirviendo (así el demo NO dispara el scrape real de ~2 min sin importar
+    qué caso se pida)."""
     import os as _os
     import ausencias_sofascore as _aus
     t0 = time.monotonic()
-    ocr_data = {
-        "selecciones": [
-            {"equipo_local": "Argentina", "equipo_visitante": "Austria",
-             "mercado": "1X2", "seleccion": "home", "cuota": None, "linea": None},
-            {"equipo_local": "Argentina", "equipo_visitante": "Austria",
-             "mercado": "over_under", "seleccion": "over", "cuota": None, "linea": 1.5},
-            {"equipo_local": "Argentina", "equipo_visitante": "Austria",
-             "mercado": "player", "seleccion": "yes", "player": "Lionel Messi",
-             "metric": "sot", "umbral": 1, "faltante": False,
-             "cuota": None, "linea": None},
-        ],
-        "cuota_total": 1.87,
-        "casa_apuestas": "Betano",
-    }
-    if case == "ausencias":
-        _payload = {"equipos": {
-            "Argentina": [
-                {"nombre": "Lionel Messi", "estado": "out",
-                 "motivo": "Injured - Muscle", "posicion": None},
-                {"nombre": "Angel Di Maria", "estado": "doubtful",
-                 "motivo": "Knock", "posicion": None}],
-            "Austria": [
-                {"nombre": "David Alaba", "estado": "out",
-                 "motivo": "Suspended", "posicion": "D"}]},
-            "url": "https://www.sofascore.com/football/match/argentina-austria/demo",
-            "scrapeado_en": "2026-07-22T12:00:00"}
-    else:
-        _payload = {"sin_dato": True}
-    _cache = _aus._cache_path("Argentina", "Austria")
+    ocr_data = _ocr_demo(case)
+    _payload = _payload_ausencias_demo(case)
+    _local = ocr_data["selecciones"][0]["equipo_local"]
+    _visit = ocr_data["selecciones"][0]["equipo_visitante"]
+    _cache = _aus._cache_path(_local, _visit)
     _aus._escribir_cache(_cache, _payload)
     try:
         parlay = validate(ocr_data, _get_teams())
