@@ -4,7 +4,7 @@
 > las patas que se van cubriendo. La fuente de verdad del código es `betbuilder.py`
 > (`GOAL_MARKETS` / `COUNT_MARKET` / `PLAYER_MARKET`); este archivo es el resumen humano.
 
-Última actualización: 2026-07-27
+Última actualización: 2026-07-29 (cierre v1 — ver `docs/ESTADO.md`)
 
 > **Foco de cobertura:** terminado el Mundial 2026, el foco pasó a la **Premier League**
 > (2026-07-26). Antes (2026-07-12) la prioridad era el Mundial y después **CONMEBOL en
@@ -22,7 +22,7 @@
 | **Goles** | 1X2 (gana/empata), más/menos goles (over/under), ambos anotan (BTTS), hándicap, resultado exacto, **doble oportunidad** (1X/X2/12) | Liga 1 + Internacional + **Premier League** | Dixon-Coles (matriz de marcadores), un fit por liga | ✅ Fase 1 + quick win 2026-07-10. **Premier ✅ 2026-07-26**: gate **+8.7%** (Brier 0.2994 vs 0.3278, 342 partidos de test), 1.140 partidos de 2022/23–2024/25. **Prior ELO (Fase 3.5, 2026-07-16): NO pasó el gate** — mejor variante `blend_fifa l2_prior=2-4` mejora global (0.2478 vs 0.2487) y sparse **+1.7%** pero el gate pedía ≥3% en sparse → sigue `intl_v0.1`; el código del prior quedó mergeado como no-op (sin publicar, `elo_params` NULL) |
 | **Conteos (por equipo)** | tiros **por equipo**, tiros al arco **por equipo** | Mundial + Liga 1 (**la Premier NO**, ver abajo) | NegBin + shrinkage (`counts_v0.1`) | ✅ Sub-proyecto B |
 | **Jugador** | **anota** (goal), **asiste** (assist), **anota o asiste** (goal_or_assist) | Internacional (513 jug.) + **Premier League** (574 jug.) — ≥10 partidos como titular | Poisson top-down + shrinkage (`player_v0.2`, k=3), **fit separado por liga** | ✅ calibrado 2026-06-24, **cola elite afinada 2026-07-11**, **Premier ✅ 2026-07-27** (gate goal **+7.7%** / assist **+3.5%**; Internacional re-publicado con fit propio: **+9.6% / +4.7%**) |
-| **Jugador — tiros al arco** (ej. "Messi 1+ tiros al arco") | **sot** (N+ tiros al arco, umbral) | Internacional (358 jugadores, ≥10 partidos; datos API-Football `/fixtures/players`) | Poisson top-down: λ_jugador = counts_model.λ_sot × cuota_sot (`player_sot_v0.1`) | ✅ **publicado 2026-07-13** — gate definitivo **+22.9%** (Brier 0.1566 vs 0.2033), e2e Messi OK. Boletos que la pedían: BET5 (Ronaldo), BET6 (Brahim Díaz). **Premier: backfill en curso** (177/1.140 fixtures al 2026-07-27, ~88/día por la cuota del plan Free) → hasta que termine, la pata sale `faltante` en boletos de Premier |
+| **Jugador — tiros al arco** (ej. "Messi 1+ tiros al arco") | **sot** (N+ tiros al arco, umbral) | Internacional (358 jug.) + **Premier League** (216 jug.) — ≥10 partidos, datos API-Football `/fixtures/players` | Poisson top-down: λ_jugador = counts_model.λ_sot × cuota_sot (`player_sot_v0.1`) | ✅ **publicado 2026-07-13** (INT) — gate **+22.9%** (Brier 0.1566 vs 0.2033), e2e Messi OK. Boletos que la pedían: BET5 (Ronaldo), BET6 (Brahim Díaz). **Premier ✅ publicado 2026-07-29** — gate **+24.2%** (Brier 0.1538 vs 0.2028, λ_sot 4.49/equipo). ⚠️ **Cobertura parcial a propósito:** se publicó con 184/1.140 fixtures hidratados (ver `docs/ESTADO.md`), y como el backfill va en orden cronológico los 216 jugadores son casi todos de **2022/23** → un fichaje posterior sale `faltante` hasta que se reanude el backfill |
 
 ## Pendiente (hoy se marca `FALTANTE` o `EXÓTICO`)
 
